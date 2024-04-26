@@ -1,0 +1,89 @@
+body {
+    font-family: 'Courier New', Courier, monospace;
+    height: 100vh;
+    width: 100vw;
+    margin: 0;
+    padding: 0;
+    position: relative;
+}
+
+#content {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    margin: 0;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: #ffffff;
+}
+
+#homeTitle {
+    cursor: pointer;
+}
+
+a {
+    color: #ffffff;
+}
+
+a:hover {
+    color: #cccccc;
+}
+
+#projects, #project {
+    display: none;
+}
+
+#projectsList {
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: row;
+    
+}
+
+#projectsList li {
+    list-style-type: none;
+    margin: 10px;
+    border: 1px solid #ffffff;
+    padding: 15px;
+    cursor: pointer;
+}
+
+#adminBtn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    color: white;
+    text-decoration: underline;
+    cursor: pointer;
+    display: none;
+}
+
+/* Customize Flmngr */
+
+li[data-flmngr-element-id="toolbar__unsplash"],
+.FileManager__help {
+    display: none !important;
+}
+
+/* Customize Dropzone */
+#uploadDropzone {
+    background-color: #555;
+}
+
+.dropzone .dz-preview.dz-image-preview {
+    background: transparent !important;
+}
+
+.dropzone .dz-preview .dz-details .dz-filename:hover {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

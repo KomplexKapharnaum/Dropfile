@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js" integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-cookie@3.0.5/dist/js.cookie.min.js"></script>
+
+    <script src="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone-min.js"></script>
+    <link href="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone.css" rel="stylesheet" type="text/css" />
+    
+    <link rel="stylesheet" href="style.css">
+
+    
+
+    <title>Dropfile KXKM</title>
+</head>
+<body>
+    <div id="content">
+        <h1 id="homeTitle">Dropfile KXKM</h1>
+
+        <div id="nick">
+            Pseudo: <span id="nickDisp"></span> - <button id="nickEditBtn">EDIT</button>
+        </div>
+
+        <br />
+        <hr />
+        <br />
+
+        <div id="projects">
+            <ul id="projectsList"></ul>
+        </div>
+
+        <div id="project">
+            <h2 id="projectTitle"></h2>
+            <div id="projectUpload">
+                --upload--
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="script.js"></script>
+</body>
+</html>
