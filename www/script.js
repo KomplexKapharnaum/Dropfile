@@ -20,11 +20,11 @@ var nick = Cookies.get('nick');
 function getNick(forced) {
     
     while(!nick || forced) {
-        nick = prompt('Pseudo', nick);
+        nick = prompt('Prénom', nick);
         nick = nick.replace(/ /g, '_').replace(/[^a-zA-Z0-9_]/g, '').substr(0, 20);
         if (nick.length < 3) {
             forced = true;
-            alert('Pseudo trop court');
+            alert('Prénom trop court');
             continue
         }
         break
