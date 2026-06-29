@@ -89,6 +89,11 @@
                                     <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(p,s,'image')" title="Images" x-html="icon('image')"></button>
                                     <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(p,s,'video')" title="Videos" x-html="icon('video')"></button>
                                     <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(p,s,'text')" title="Text" x-html="icon('text')"></button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(p,s,'stream')" title="Camera stream" x-html="icon('stream')"></button>
+                                    <select class="streammode" x-show="s.accept && s.accept.stream" @change="setStreamMode(p,s,$event.target.value)" title="When multiple streamers join">
+                                        <option value="replace" :selected="s.streamMode!=='grid'">single</option>
+                                        <option value="grid" :selected="s.streamMode==='grid'">grid</option>
+                                    </select>
                                 </span>
                                 <span class="spacer"></span>
                                 <span class="count" x-text="s.count + (s.count===1 ? ' file' : ' files')"></span>

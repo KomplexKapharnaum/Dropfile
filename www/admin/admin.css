@@ -80,6 +80,7 @@ button .ic { width: 15px; height: 15px; }
 .tchip.iconbtn { padding: 4px; }
 .tchip:hover { border-color: var(--accent); }
 .tchip.on { background: var(--accent); border-color: var(--accent); color: #06122a; }
+.streammode { padding: 3px 6px; font-size: 12px; border-radius: 5px; margin-left: 2px; }
 
 /* public/private switch */
 .switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }

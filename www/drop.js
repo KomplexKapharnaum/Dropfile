@@ -20,6 +20,8 @@
     });
 
     let allowSelfDelete = false;
+    let ICE = [];
+    let sender = null;
     Dropzone.autoDiscover = false;
 
     // drop metadata: titles (project = main, scene = subtitle) + accepted types
@@ -28,7 +30,8 @@
         document.getElementById('sceneTitle').textContent = info.source || '';
         document.title = (info.project || 'Drop') + (info.source ? ' · ' + info.source : '');
         allowSelfDelete = info.allowSelfDelete;
-        setupUI(info.accept || { image: true, video: true, text: false });
+        ICE = info.ice || [];
+        setupUI(info.accept || { image: true, video: true, text: false, stream: false });
     }).catch(() => {
         document.getElementById('projTitle').textContent = 'Unknown drop';
     });
@@ -59,6 +62,31 @@
             document.getElementById('textBox').classList.remove('hidden');
             document.getElementById('sendText').onclick = sendText;
         }
+
+        if (accept.stream) {
+            const goLive = document.getElementById('goLive');
+            goLive.classList.remove('hidden');
+            goLive.onclick = startCamera;
+        }
+    }
+
+    function startCamera() {
+        document.getElementById('camOverlay').classList.remove('hidden');
+        const status = document.getElementById('camStatus');
+        sender = new CameraSender({
+            token, ice: ICE,
+            getNick: () => localStorage.getItem('df_nick') || 'anon',
+            preview: document.getElementById('camPreview'),
+            onStatus: (s) => { status.textContent = s; }
+        });
+        sender.start().catch(e => { status.textContent = 'Camera error: ' + (e.message || e); });
+        document.getElementById('camFlip').onclick = () => sender && sender.flip().catch(() => {});
+        document.getElementById('camStop').onclick = stopCamera;
+    }
+
+    function stopCamera() {
+        if (sender) { sender.stop(); sender = null; }
+        document.getElementById('camOverlay').classList.add('hidden');
     }
 
     function dropMessage(accept) {

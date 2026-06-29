@@ -8,6 +8,8 @@
     <link href="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone.css" rel="stylesheet" type="text/css" />
     <script src="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone-min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/camera.js"></script>
 </head>
 <body>
     <header>
@@ -23,6 +25,10 @@
             <input id="nick" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off">
         </label>
     </section>
+
+    <button id="goLive" class="golive hidden">
+        <span class="dot">●</span> Go live — share your camera
+    </button>
 
     <div id="dz" class="dropzone hidden"></div>
 
@@ -46,6 +52,18 @@
                 <button id="copyBtn">Copy link</button>
                 <button id="closeShare">Close</button>
             </div>
+        </div>
+    </div>
+
+    <div id="camOverlay" class="cam-overlay hidden">
+        <video id="camPreview" autoplay muted playsinline></video>
+        <div class="cam-top">
+            <span class="cam-live">● LIVE</span>
+            <span id="camStatus" class="cam-status">starting…</span>
+        </div>
+        <div class="cam-bar">
+            <button id="camFlip">↺ Flip camera</button>
+            <button id="camStop" class="stop">■ Stop</button>
         </div>
     </div>
 

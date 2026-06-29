@@ -25,6 +25,7 @@
     video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous';
 
     let settings = defaultSettings();
+    let active = null;          // active scene info (incl. stream flag/mode)
     let playlist = [];
     let queue = [];
     let index = 0;
@@ -33,6 +34,10 @@
     let current = null;
     let timer = null;
     let rafId = null;
+    // camera takeover
+    let receiver = null;
+    let streaming = false;
+    let streamRaf = null;
 
     function defaultSettings() {
         return {
@@ -47,10 +52,17 @@
 
     // ---- socket ----
     const socket = io();
+    receiver = new StreamReceiver({ token, socket, onChange: onStreamChange });
     socket.on('connect', () => { socket.emit('player-join', token); setStatus(''); });
     socket.on('disconnect', () => setStatus('reconnecting…'));
     socket.on('settings', (s) => { settings = s; layout(); });
-    socket.on('active-change', (data) => { playlist = data.media || []; buildQueue(); start(); });
+    socket.on('active-change', (data) => {
+        active = data.active || null;
+        playlist = data.media || [];
+        buildQueue();
+        updateStreamMembership();
+        if (!streaming) start();
+    });
     socket.on('new-media', (m) => { fresh.push(m); updateCounter(); });
     socket.on('command', (cmd) => {
         if (cmd === 'next') next();
@@ -68,10 +80,13 @@
             .then(r => r.ok ? r.json() : Promise.reject(new Error('unknown player')))
             .then(state => {
                 settings = state.settings || defaultSettings();
+                active = state.active || null;
                 playlist = state.media || [];
+                if (state.ice && receiver) receiver.ice = state.ice;
                 layout();
                 buildQueue();
-                start();
+                updateStreamMembership();
+                if (!streaming) start();
                 if (!state.active) setStatus('No source selected');
             })
             .catch(e => setStatus(String(e.message || e)));
@@ -196,7 +211,7 @@
         }
         canvas.style.left = Math.round(left) + 'px';
         canvas.style.top = Math.round(top) + 'px';
-        redraw();
+        if (streaming) drawStreams(); else redraw();
     }
 
     function clearCanvas() { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
@@ -239,7 +254,81 @@
         ctx.restore();
     }
 
+    // ---- camera takeover ----
+    function updateStreamMembership() {
+        if (!receiver) return;
+        if (active && active.stream && active.sourceId) receiver.join(active.sourceId);
+        else receiver.leave();
+    }
+
+    function onStreamChange() {
+        const has = receiver && receiver.has();
+        if (has && !streaming) {
+            streaming = true;
+            clearTimers(); stopRaf();
+            startStreamRaf();
+            setStatus('');
+        } else if (!has && streaming) {
+            streaming = false;
+            stopStreamRaf();
+            start(); // revert to the folder diaporama
+        }
+        if (streaming) updateAudio();
+        updateCounter();
+    }
+
+    function startStreamRaf() { stopStreamRaf(); const loop = () => { drawStreams(); streamRaf = requestAnimationFrame(loop); }; loop(); }
+    function stopStreamRaf() { if (streamRaf) { cancelAnimationFrame(streamRaf); streamRaf = null; } }
+
+    function drawStreams() {
+        const sc = settings.scaler;
+        const C = container();
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const list = receiver.list().filter(s => s.video.videoWidth);
+        if (!list.length) return;
+
+        ctx.save();
+        ctx.scale(canvas.width / C.w, canvas.height / C.h);
+        const mode = (active && active.streamMode) || 'replace';
+        if (mode === 'grid' && list.length > 1) {
+            const n = list.length;
+            const cols = Math.ceil(Math.sqrt(n));
+            const rows = Math.ceil(n / cols);
+            const cw = C.w / cols, ch = C.h / rows;
+            list.forEach((s, i) => drawVideoCover(s.video, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch));
+        } else {
+            drawFittedVideo(list[list.length - 1].video, C.w, C.h, sc.fit); // newest = active
+        }
+        ctx.restore();
+    }
+
+    function drawFittedVideo(video, boxW, boxH, fit) {
+        const size = fittedSize(video.videoWidth, video.videoHeight, boxW, boxH, fit);
+        try { ctx.drawImage(video, (boxW - size.w) / 2, (boxH - size.h) / 2, size.w, size.h); } catch (e) {}
+    }
+
+    function drawVideoCover(video, x, y, w, h) {
+        const sr = video.videoWidth / video.videoHeight, br = w / h;
+        let dw, dh;
+        if (sr > br) { dh = h; dw = h * sr; } else { dw = w; dh = w / sr; }
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+        try { ctx.drawImage(video, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); } catch (e) {}
+        ctx.restore();
+    }
+
+    // audio: active (newest) stream only, others muted
+    function updateAudio() {
+        const list = receiver.list();
+        list.forEach((s, i) => {
+            const isActive = (i === list.length - 1);
+            s.video.muted = !isActive;
+            if (isActive) { const p = s.video.play(); if (p && p.catch) p.catch(() => {}); }
+        });
+    }
+
     function updateCounter() {
+        if (streaming) { counter.classList.add('fresh'); counter.textContent = '● ' + receiver.list().length + ' live'; return; }
         if (playingFresh) { counter.classList.add('fresh'); counter.textContent = '★ ' + fresh.length + ' fresh'; }
         else { counter.classList.remove('fresh'); counter.textContent = queue.length ? (index + 1) + ' / ' + queue.length : ''; }
     }
@@ -249,7 +338,7 @@
         else if (e.key === 'ArrowLeft') { prev(); }
         else if (e.key === 'f') { document.documentElement.requestFullscreen?.(); }
     });
-    canvas.addEventListener('click', () => next());
+    canvas.addEventListener('click', () => { if (streaming) updateAudio(); else next(); });
     window.addEventListener('resize', layout);
 
     layout();

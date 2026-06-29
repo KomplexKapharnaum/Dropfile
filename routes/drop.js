@@ -7,6 +7,7 @@ const multer = require('multer');
 const store = require('../lib/store');
 const ids = require('../lib/ids');
 const model = require('../lib/model');
+const turn = require('../lib/turn');
 const { mediaType, safeNick } = require('../lib/media');
 
 module.exports = function (ctx) {
@@ -45,8 +46,10 @@ module.exports = function (ctx) {
         res.json({
             project: req.dropProject.name,
             source: req.dropSource.name,
+            sceneId: req.dropSource.id,
             allowSelfDelete: !!req.dropSource.allowSelfDelete,
-            accept: req.dropSource.accept || { image: true, video: true, text: false }
+            accept: req.dropSource.accept || { image: true, video: true, text: false, stream: false },
+            ice: turn.iceServers()
         });
     });
 

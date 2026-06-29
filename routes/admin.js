@@ -52,8 +52,8 @@ module.exports = function (ctx) {
         try { return listMedia(model.sourceDir(UPLOAD_PATH, p, s)).length; } catch (e) { return 0; }
     }
 
-    function defaultAccept() { return { image: true, video: true, text: false }; }
-    function cleanAccept(a) { return { image: !!a.image, video: !!a.video, text: !!a.text }; }
+    function defaultAccept() { return { image: true, video: true, text: false, stream: false }; }
+    function cleanAccept(a) { return { image: !!a.image, video: !!a.video, text: !!a.text, stream: !!a.stream }; }
 
     // create a scene under project p (shared by project-create and scene-create)
     function makeScene(p, name, isPublic, accept) {
@@ -64,6 +64,7 @@ module.exports = function (ctx) {
             public: !!isPublic, dropToken: ids.token(),
             allowSelfDelete: true, order: [],
             accept: accept ? cleanAccept(accept) : defaultAccept(),
+            streamMode: 'replace',
             createdAt: Date.now()
         };
         p.sources = p.sources || {};
@@ -80,6 +81,7 @@ module.exports = function (ctx) {
             public: !!s.public, dropToken: s.dropToken,
             allowSelfDelete: !!s.allowSelfDelete,
             accept: s.accept ? cleanAccept(s.accept) : defaultAccept(),
+            streamMode: s.streamMode === 'grid' ? 'grid' : 'replace',
             count: sceneCount(p, s)
         };
     }
@@ -278,6 +280,7 @@ module.exports = function (ctx) {
         if (typeof req.body.public === 'boolean') s.public = req.body.public;
         if (typeof req.body.allowSelfDelete === 'boolean') s.allowSelfDelete = req.body.allowSelfDelete;
         if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
+        if (req.body.streamMode === 'replace' || req.body.streamMode === 'grid') s.streamMode = req.body.streamMode;
         store.save();
         res.json({ project: serializeProject(req._project) });
     });
