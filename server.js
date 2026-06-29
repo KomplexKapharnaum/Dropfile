@@ -46,7 +46,10 @@ const filebrowser = spawn('filebrowser', [
                                 '-r', upload_path
                             ]);
 
-app.use('/admin', proxy('http://127.0.0.1:'+browser_port));
+app.use('/admin', proxy('http://127.0.0.1:'+browser_port, {
+    parseReqBody: false,
+    limit: upload_size + 'mb'
+}));
 
 // Limits
 //
