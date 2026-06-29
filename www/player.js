@@ -1,6 +1,15 @@
 // Player display engine: canvas compositor (LED scaler) + diaporama/manual
 // playback + live control over Socket.IO. The server holds authoritative state,
 // so a reload/restart resumes the current source automatically.
+//
+// Compositor rules:
+//  - container 'full'   -> canvas fills the window.
+//  - container 'custom' -> canvas is EXACTLY width×height device pixels (no
+//    fit-to-window scaling — LED walls have no scaler), placed on screen via
+//    posX/posY (+offset); the stage clips overflow.
+//  - evenLineSuppression -> the whole composite is squashed vertically to 50%
+//    (e.g. 256×640 -> 256×320), deforming the image; the semi-transparent panel
+//    re-expands it across its present rows. Not black bars.
 (function () {
     const token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
 
@@ -10,29 +19,29 @@
     const overlay = document.getElementById('overlay');
     const counter = document.getElementById('counter');
 
-    // offscreen media elements (drawn into the canvas)
     const img = new Image();
     img.crossOrigin = 'anonymous';
     const video = document.createElement('video');
     video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous';
 
-    // ---- state ----
     let settings = defaultSettings();
-    let playlist = [];        // full media from server
-    let queue = [];           // active rotation (after loop/lastX applied)
+    let playlist = [];
+    let queue = [];
     let index = 0;
-    let fresh = [];           // freshly uploaded items (priority)
+    let fresh = [];
     let playingFresh = false;
-    let current = null;       // current item being shown
+    let current = null;
     let timer = null;
     let rafId = null;
 
     function defaultSettings() {
         return {
             playMode: 'diaporama', imageDuration: 5, loop: 'all', lastX: 20, prioritizeFresh: true,
-            scaler: { container: 'full', width: 0, height: 0, fit: 'contain',
-                hPosition: 'center', hOffset: 0, vPosition: 'center', vOffset: 0,
-                rotation: 0, evenLineSuppression: false }
+            scaler: {
+                container: 'full', width: 0, height: 0,
+                posX: 'center', offsetX: 0, posY: 'center', offsetY: 0,
+                fit: 'contain', rotation: 0, evenLineSuppression: false
+            }
         };
     }
 
@@ -40,7 +49,7 @@
     const socket = io();
     socket.on('connect', () => { socket.emit('player-join', token); setStatus(''); });
     socket.on('disconnect', () => setStatus('reconnecting…'));
-    socket.on('settings', (s) => { settings = s; applyLayout(); redraw(); });
+    socket.on('settings', (s) => { settings = s; layout(); });
     socket.on('active-change', (data) => { playlist = data.media || []; buildQueue(); start(); });
     socket.on('new-media', (m) => { fresh.push(m); updateCounter(); });
     socket.on('command', (cmd) => {
@@ -54,14 +63,13 @@
         overlay.style.display = msg ? 'flex' : 'none';
     }
 
-    // ---- load initial state from server (authoritative) ----
     function reload() {
         fetch('/api/player/' + token)
             .then(r => r.ok ? r.json() : Promise.reject(new Error('unknown player')))
             .then(state => {
                 settings = state.settings || defaultSettings();
                 playlist = state.media || [];
-                applyLayout();
+                layout();
                 buildQueue();
                 start();
                 if (!state.active) setStatus('No source selected');
@@ -72,9 +80,7 @@
     // ---- playlist shaping (loop / lastX) ----
     function buildQueue() {
         let list = playlist.slice();
-        if (settings.loop === 'lastX' && settings.lastX > 0) {
-            list = list.slice(-settings.lastX); // playlist is oldest->newest, so tail = newest
-        }
+        if (settings.loop === 'lastX' && settings.lastX > 0) list = list.slice(-settings.lastX);
         queue = list;
         if (index >= queue.length) index = 0;
     }
@@ -88,29 +94,17 @@
         next(true);
     }
 
-    // ---- advance ----
     function next(fromStart) {
         clearTimers();
-
-        if (settings.prioritizeFresh && fresh.length) {
-            playingFresh = true;
-            show(fresh.shift());
-            return;
-        }
-        if (playingFresh) { playingFresh = false; } // resume normal rotation
-
+        if (settings.prioritizeFresh && fresh.length) { playingFresh = true; show(fresh.shift()); return; }
+        if (playingFresh) playingFresh = false;
         if (!queue.length) {
             if (fresh.length) { playingFresh = true; show(fresh.shift()); }
-            else { setStatus('No media'); }
+            else setStatus('No media');
             return;
         }
-
         if (!fromStart) index++;
-        if (index >= queue.length) {
-            // loop: re-read latest from server so new uploads appear
-            reloadPlaylist();
-            return;
-        }
+        if (index >= queue.length) { reloadPlaylist(); return; }
         show(queue[index]);
     }
 
@@ -128,13 +122,11 @@
                 playlist = data.media || [];
                 buildQueue();
                 index = 0;
-                if (queue.length) show(queue[0]);
-                else setStatus('No media');
+                if (queue.length) show(queue[0]); else setStatus('No media');
             })
             .catch(() => { index = 0; if (queue.length) show(queue[0]); });
     }
 
-    // ---- show one item ----
     function show(item) {
         current = item;
         setStatus('');
@@ -148,8 +140,8 @@
             img.src = item.url;
             if (img.complete && img.naturalWidth) { redraw(); scheduleNext(); }
         } else {
-            video.onloadeddata = () => { startRaf(); };
-            video.onended = () => { if (settings.playMode === 'diaporama' || true) next(); };
+            video.onloadeddata = () => startRaf();
+            video.onended = () => next();
             video.src = item.url;
             video.currentTime = 0;
             const p = video.play();
@@ -158,48 +150,56 @@
     }
 
     function scheduleNext() {
-        if (settings.playMode === 'diaporama') {
-            timer = setTimeout(next, Math.max(1, settings.imageDuration) * 1000);
-        }
-        // manual mode: wait for keypress / tap
+        if (settings.playMode === 'diaporama') timer = setTimeout(next, Math.max(1, settings.imageDuration) * 1000);
     }
-
     function clearTimers() { if (timer) { clearTimeout(timer); timer = null; } }
     function stopRaf() { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
-    function startRaf() {
-        stopRaf();
-        const loop = () => { redraw(); rafId = requestAnimationFrame(loop); };
-        loop();
-    }
+    function startRaf() { stopRaf(); const loop = () => { redraw(); rafId = requestAnimationFrame(loop); }; loop(); }
 
-    // ---- canvas compositor (the LED scaler) ----
-    function surfaceSize() {
+    // ---- compositor ----
+    function container() {
         const sc = settings.scaler;
         if (sc.container === 'custom' && sc.width > 0 && sc.height > 0) return { w: sc.width, h: sc.height };
         return { w: window.innerWidth, h: window.innerHeight };
     }
 
-    function applyLayout() {
-        const { w, h } = surfaceSize();
-        canvas.width = w; canvas.height = h;
+    function placeX(mode, off, w) {
+        const W = window.innerWidth;
+        if (mode === 'left') return 0;
+        if (mode === 'right') return W - w;
+        if (mode === 'custom') return Number(off) || 0;
+        return (W - w) / 2;
+    }
+    function placeY(mode, off, h) {
+        const H = window.innerHeight;
+        if (mode === 'top') return 0;
+        if (mode === 'bottom') return H - h;
+        if (mode === 'custom') return Number(off) || 0;
+        return (H - h) / 2;
+    }
+
+    function layout() {
         const sc = settings.scaler;
-        if (sc.container === 'custom' && sc.width > 0 && sc.height > 0) {
-            // fit the native-resolution buffer into the viewport for preview;
-            // on a 1:1 LED-resolution window this resolves to scale = 1.
-            const scale = Math.min(window.innerWidth / w, window.innerHeight / h);
-            canvas.style.width = Math.round(w * scale) + 'px';
-            canvas.style.height = Math.round(h * scale) + 'px';
-        } else {
-            canvas.style.width = w + 'px';
-            canvas.style.height = h + 'px';
+        const C = container();
+        const even = !!sc.evenLineSuppression;
+        const outH = even ? Math.max(1, Math.round(C.h / 2)) : C.h;
+
+        canvas.width = C.w;          // buffer = output pixels (1:1 on screen)
+        canvas.height = outH;
+        canvas.style.width = C.w + 'px';
+        canvas.style.height = outH + 'px';
+
+        let left = 0, top = 0;
+        if (sc.container === 'custom') {
+            left = placeX(sc.posX, sc.offsetX, C.w);
+            top = placeY(sc.posY, sc.offsetY, outH);
         }
+        canvas.style.left = Math.round(left) + 'px';
+        canvas.style.top = Math.round(top) + 'px';
         redraw();
     }
 
-    function clearCanvas() {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    function clearCanvas() { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
 
     function mediaIntrinsic() {
         if (!current) return null;
@@ -222,59 +222,36 @@
         const m = mediaIntrinsic();
         if (!m) return;
         const sc = settings.scaler;
-        const S = { w: canvas.width, h: canvas.height };
-        const rot = ((sc.rotation % 360) + 360) % 360;
-        const swap = (rot === 90 || rot === 270);
-        const box = { w: swap ? S.h : S.w, h: swap ? S.w : S.h };
-
-        const size = fittedSize(m.w, m.h, box.w, box.h, sc.fit);
-
-        // position within the (rotation-aligned) box
-        let cx = 0, cy = 0;
-        if (sc.hPosition === 'left') cx = -(box.w - size.w) / 2;
-        else if (sc.hPosition === 'right') cx = (box.w - size.w) / 2;
-        else if (sc.hPosition === 'custom') cx = sc.hOffset || 0;
-        if (sc.vPosition === 'top') cy = -(box.h - size.h) / 2;
-        else if (sc.vPosition === 'bottom') cy = (box.h - size.h) / 2;
-        else if (sc.vPosition === 'custom') cy = sc.vOffset || 0;
+        const C = container();
 
         ctx.save();
-        ctx.translate(S.w / 2, S.h / 2);
+        // squash the whole composite into the (possibly halved) canvas height
+        ctx.scale(canvas.width / C.w, canvas.height / C.h);
+
+        const rot = ((sc.rotation % 360) + 360) % 360;
+        const swap = (rot === 90 || rot === 270);
+        const box = { w: swap ? C.h : C.w, h: swap ? C.w : C.h };
+        const size = fittedSize(m.w, m.h, box.w, box.h, sc.fit);
+
+        ctx.translate(C.w / 2, C.h / 2);
         if (rot) ctx.rotate(rot * Math.PI / 180);
-        try { ctx.drawImage(m.el, cx - size.w / 2, cy - size.h / 2, size.w, size.h); } catch (e) {}
+        try { ctx.drawImage(m.el, -size.w / 2, -size.h / 2, size.w, size.h); } catch (e) {}
         ctx.restore();
-
-        if (sc.evenLineSuppression) suppressEvenLines(S);
     }
 
-    // Blank every even output row (0,2,4…) so content only lands on the rows a
-    // semi-transparent LED panel actually displays.
-    function suppressEvenLines(S) {
-        ctx.fillStyle = '#000';
-        for (let y = 0; y < S.h; y += 2) ctx.fillRect(0, y, S.w, 1);
-    }
-
-    // ---- counter ----
     function updateCounter() {
-        if (playingFresh) {
-            counter.classList.add('fresh');
-            counter.textContent = '★ ' + (fresh.length) + ' fresh';
-        } else {
-            counter.classList.remove('fresh');
-            counter.textContent = queue.length ? (index + 1) + ' / ' + queue.length : '';
-        }
+        if (playingFresh) { counter.classList.add('fresh'); counter.textContent = '★ ' + fresh.length + ' fresh'; }
+        else { counter.classList.remove('fresh'); counter.textContent = queue.length ? (index + 1) + ' / ' + queue.length : ''; }
     }
 
-    // ---- input (manual mode + skip) ----
     document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
         else if (e.key === 'ArrowLeft') { prev(); }
         else if (e.key === 'f') { document.documentElement.requestFullscreen?.(); }
     });
     canvas.addEventListener('click', () => next());
-    window.addEventListener('resize', applyLayout);
+    window.addEventListener('resize', layout);
 
-    // ---- go ----
-    applyLayout();
+    layout();
     reload();
 })();

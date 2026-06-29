@@ -25,11 +25,11 @@ module.exports = function (ctx) {
             prioritizeFresh: true,
             scaler: {
                 container: 'full', width: 0, height: 0,
-                fit: 'contain',
-                hPosition: 'center', hOffset: 0,
-                vPosition: 'center', vOffset: 0,
+                posX: 'center', offsetX: 0,     // container placement on screen (custom res)
+                posY: 'center', offsetY: 0,
+                fit: 'contain',                 // common filling options:
                 rotation: 0,
-                evenLineSuppression: false
+                evenLineSuppression: false      // vertical 50% squash for semi-transparent LED
             }
         };
     }

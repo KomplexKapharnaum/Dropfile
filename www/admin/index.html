@@ -29,8 +29,7 @@
     <!-- ===================== PROJECTS ===================== -->
     <main x-show="tab==='projects'" x-cloak>
         <div class="newrow">
-            <input type="text" placeholder="New project name" x-model="newProjectName" @keydown.enter="createProject()">
-            <button class="primary" @click="createProject()">+ Project</button>
+            <button class="primary" @click="createProject()"><span x-html="icon('plus')"></span> Project</button>
         </div>
 
         <template x-for="p in projects" :key="p.id">
@@ -44,6 +43,35 @@
                         <button @click.stop="addScene(p)"><span x-html="icon('plus')"></span> Scene</button>
                         <button class="iconbtn danger" title="Delete project" @click.stop="deleteProject(p)" x-html="icon('trash')"></button>
                     </div>
+                </div>
+
+                <div class="players-row">
+                    <button class="iconbtn" title="Choose enabled players" @click="editPlayers[p.id] = !editPlayers[p.id]" x-html="icon('gear')"></button>
+                    <template x-if="!editPlayers[p.id]">
+                        <span class="prow-list">
+                            <template x-for="pl in attachedPlayers(p)" :key="pl.id">
+                                <span class="pbadge">
+                                    <span class="pname" title="Open player settings" @click="gotoPlayer(pl.id)" x-text="pl.name"></span>
+                                    <select class="pscene" title="Active scene for this player"
+                                            @change="setActive(playerById(pl.id), $event.target.value)">
+                                        <option value="" :selected="projActiveKey(pl, p.id)===''">scene…</option>
+                                        <template x-for="(s, i) in p.sources" :key="s.id">
+                                            <option :value="p.id + '|' + s.id" :selected="isActiveScene(pl, p.id, s.id)" x-text="pad(i+1) + ' ' + s.name"></option>
+                                        </template>
+                                    </select>
+                                </span>
+                            </template>
+                            <span class="muted" x-show="attachedPlayers(p).length===0">No players enabled — use the gear ⚙</span>
+                        </span>
+                    </template>
+                    <template x-if="editPlayers[p.id]">
+                        <span class="prow-edit">
+                            <template x-for="pl in players" :key="pl.id">
+                                <span class="badge-toggle" :class="{on: isAttached(pl, p.id)}" @click="toggleAttach(pl, p.id)" x-text="pl.name"></span>
+                            </template>
+                            <span class="muted" x-show="players.length===0">Create a player first.</span>
+                        </span>
+                    </template>
                 </div>
 
                 <div class="scenes" :data-scenes="p.id">
@@ -114,15 +142,6 @@
                     <p class="muted" x-show="p.sources.length===0">No scenes yet — add one.</p>
                 </div>
 
-                <div class="attached" x-show="players.length">
-                    <span class="muted">Players:</span>
-                    <template x-for="pl in players" :key="pl.id">
-                        <label class="chk pill">
-                            <input type="checkbox" :checked="isAttached(pl,p.id)" @change="toggleAttach(pl,p.id)">
-                            <span x-text="pl.name"></span>
-                        </label>
-                    </template>
-                </div>
             </section>
         </template>
         <p class="muted" x-show="projects.length===0">No projects yet.</p>
@@ -131,12 +150,11 @@
     <!-- ===================== PLAYERS ===================== -->
     <main x-show="tab==='players'" x-cloak>
         <div class="newrow">
-            <input type="text" placeholder="New player nickname" x-model="newPlayerName" @keydown.enter="createPlayer()">
-            <button class="primary" @click="createPlayer()">+ Player</button>
+            <button class="primary" @click="createPlayer()"><span x-html="icon('plus')"></span> Player</button>
         </div>
 
         <template x-for="pl in players" :key="pl.id">
-            <section class="card">
+            <section class="card" :id="'player-' + pl.id">
                 <div class="card-head">
                     <div class="title-wrap">
                         <h2 x-text="pl.name"></h2>
@@ -155,28 +173,23 @@
                     </div>
 
                     <div class="player-config">
-                        <label class="field">
-                            <span>Attached projects</span>
-                            <div class="attach-list">
-                                <template x-for="p in projects" :key="p.id">
-                                    <label class="chk pill">
-                                        <input type="checkbox" :checked="isAttached(pl,p.id)" @change="toggleAttach(pl,p.id)">
-                                        <span x-text="p.name"></span>
-                                    </label>
-                                </template>
-                                <span class="muted" x-show="projects.length===0">Create a project first.</span>
-                            </div>
-                        </label>
-
-                        <label class="field">
-                            <span>Active source</span>
-                            <select @change="setActive(pl, $event.target.value)">
+                        <div class="active-row">
+                            <span class="lbl">Active source</span>
+                            <select class="grow" @change="setActive(pl, $event.target.value)">
                                 <option value="" :selected="activeKey(pl)===''">— none —</option>
                                 <template x-for="opt in sourcesFor(pl)" :key="opt.key">
                                     <option :value="opt.key" :selected="activeKey(pl)===opt.key" x-text="opt.label"></option>
                                 </template>
                             </select>
-                        </label>
+                            <button class="iconbtn" title="Attached projects" @click="editProjects[pl.id] = !editProjects[pl.id]" x-html="icon('gear')"></button>
+                        </div>
+                        <div class="proj-edit" x-show="editProjects[pl.id]" x-cloak>
+                            <span class="muted">Attach to:</span>
+                            <template x-for="p in projects" :key="p.id">
+                                <span class="badge-toggle" :class="{on: isAttached(pl, p.id)}" @click="toggleAttach(pl, p.id)" x-text="p.name"></span>
+                            </template>
+                            <span class="muted" x-show="projects.length===0">Create a project first.</span>
+                        </div>
 
                         <fieldset class="settings">
                             <legend>Playback</legend>
@@ -187,20 +200,18 @@
                                     <option value="manual">manual (keypress)</option>
                                 </select>
                             </label>
-                            <label class="field inline">
-                                <span>Image duration (s)</span>
+                            <label class="field inline" x-show="pl.settings.playMode !== 'manual'">
+                                <span>Duration (s)</span>
                                 <input type="number" min="1" step="1" x-model.number="pl.settings.imageDuration" @change="saveSettings(pl)">
                             </label>
                             <label class="field inline">
                                 <span>Loop</span>
                                 <select x-model="pl.settings.loop" @change="saveSettings(pl)">
                                     <option value="all">all media</option>
-                                    <option value="lastX">last X uploaded</option>
+                                    <option value="lastX">last X</option>
                                 </select>
-                            </label>
-                            <label class="field inline" x-show="pl.settings.loop==='lastX'">
-                                <span>X</span>
-                                <input type="number" min="1" step="1" x-model.number="pl.settings.lastX" @change="saveSettings(pl)">
+                                <input class="xnum" type="number" min="1" step="1" x-show="pl.settings.loop==='lastX'"
+                                       x-model.number="pl.settings.lastX" @change="saveSettings(pl)">
                             </label>
                             <label class="chk">
                                 <input type="checkbox" x-model="pl.settings.prioritizeFresh" @change="saveSettings(pl)">
@@ -217,12 +228,37 @@
                                     <option value="custom">custom resolution</option>
                                 </select>
                             </label>
-                            <div class="row" x-show="pl.settings.scaler.container==='custom'">
-                                <label class="field inline"><span>W</span>
-                                    <input type="number" min="0" x-model.number="pl.settings.scaler.width" @change="saveSettings(pl)"></label>
-                                <label class="field inline"><span>H</span>
-                                    <input type="number" min="0" x-model.number="pl.settings.scaler.height" @change="saveSettings(pl)"></label>
+
+                            <div class="subgroup" x-show="pl.settings.scaler.container==='custom'" x-cloak>
+                                <div class="subtitle">Custom resolution — exact pixels on screen</div>
+                                <div class="row">
+                                    <label class="field inline narrow"><span>W</span>
+                                        <input type="number" min="0" x-model.number="pl.settings.scaler.width" @change="saveSettings(pl)"></label>
+                                    <label class="field inline narrow"><span>H</span>
+                                        <input type="number" min="0" x-model.number="pl.settings.scaler.height" @change="saveSettings(pl)"></label>
+                                </div>
+                                <div class="field">
+                                    <span>Offset X</span>
+                                    <div class="radios">
+                                        <label><input type="radio" :name="'px'+pl.id" value="left" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> left</label>
+                                        <label><input type="radio" :name="'px'+pl.id" value="center" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> center</label>
+                                        <label><input type="radio" :name="'px'+pl.id" value="right" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> right</label>
+                                        <label><input type="radio" :name="'px'+pl.id" value="custom" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> px</label>
+                                        <input class="xnum" type="number" x-show="pl.settings.scaler.posX==='custom'" x-model.number="pl.settings.scaler.offsetX" @change="saveSettings(pl)">
+                                    </div>
+                                </div>
+                                <div class="field">
+                                    <span>Offset Y</span>
+                                    <div class="radios">
+                                        <label><input type="radio" :name="'py'+pl.id" value="top" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> top</label>
+                                        <label><input type="radio" :name="'py'+pl.id" value="center" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> center</label>
+                                        <label><input type="radio" :name="'py'+pl.id" value="bottom" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> bottom</label>
+                                        <label><input type="radio" :name="'py'+pl.id" value="custom" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> px</label>
+                                        <input class="xnum" type="number" x-show="pl.settings.scaler.posY==='custom'" x-model.number="pl.settings.scaler.offsetY" @change="saveSettings(pl)">
+                                    </div>
+                                </div>
                             </div>
+
                             <label class="field inline">
                                 <span>Fit</span>
                                 <select x-model="pl.settings.scaler.fit" @change="saveSettings(pl)">
@@ -230,24 +266,6 @@
                                     <option value="cover">cover</option>
                                 </select>
                             </label>
-                            <div class="row">
-                                <label class="field inline"><span>H pos</span>
-                                    <select x-model="pl.settings.scaler.hPosition" @change="saveSettings(pl)">
-                                        <option value="center">center</option><option value="left">left</option>
-                                        <option value="right">right</option><option value="custom">custom</option>
-                                    </select></label>
-                                <label class="field inline" x-show="pl.settings.scaler.hPosition==='custom'"><span>dx</span>
-                                    <input type="number" x-model.number="pl.settings.scaler.hOffset" @change="saveSettings(pl)"></label>
-                            </div>
-                            <div class="row">
-                                <label class="field inline"><span>V pos</span>
-                                    <select x-model="pl.settings.scaler.vPosition" @change="saveSettings(pl)">
-                                        <option value="center">center</option><option value="top">top</option>
-                                        <option value="bottom">bottom</option><option value="custom">custom</option>
-                                    </select></label>
-                                <label class="field inline" x-show="pl.settings.scaler.vPosition==='custom'"><span>dy</span>
-                                    <input type="number" x-model.number="pl.settings.scaler.vOffset" @change="saveSettings(pl)"></label>
-                            </div>
                             <label class="field inline">
                                 <span>Rotation</span>
                                 <select x-model.number="pl.settings.scaler.rotation" @change="saveSettings(pl)">
@@ -257,7 +275,7 @@
                             </label>
                             <label class="chk">
                                 <input type="checkbox" x-model="pl.settings.scaler.evenLineSuppression" @change="saveSettings(pl)">
-                                even-line suppression (semi-transparent LED)
+                                even-line squash (vertical 50%)
                             </label>
                         </fieldset>
                     </div>

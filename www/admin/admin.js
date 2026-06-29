@@ -28,7 +28,8 @@ const ICONS = {
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
     plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
     archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>',
-    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>'
+    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
 };
 
 function adminApp() {
@@ -37,9 +38,9 @@ function adminApp() {
         publicUrl: '',
         projects: [],
         players: [],
-        newProjectName: '',
-        newPlayerName: '',
         toast: '',
+        editPlayers: {},   // per-project: choosing enabled players
+        editProjects: {},  // per-player: choosing attached projects
         // per-scene UI state (keyed by scene id)
         expanded: {},
         files: {},
@@ -80,8 +81,8 @@ function adminApp() {
 
         // ---- projects ----
         createProject() {
-            const name = this.newProjectName.trim(); if (!name) return;
-            this.guard(async () => { await api('POST', '/projects', { name }); this.newProjectName = ''; await this.loadProjects(); });
+            const name = (prompt('Project name', '') || '').trim(); if (!name) return;
+            this.guard(async () => { await api('POST', '/projects', { name }); await this.loadProjects(); });
         },
         renameProject(p) {
             const name = prompt('Project name', p.name); if (!name) return;
@@ -285,9 +286,18 @@ function adminApp() {
 
         // ---- players ----
         createPlayer() {
-            const name = this.newPlayerName.trim(); if (!name) return;
-            this.guard(async () => { await api('POST', '/players', { name }); this.newPlayerName = ''; await this.loadPlayers(); });
+            const name = (prompt('Player nickname', '') || '').trim(); if (!name) return;
+            this.guard(async () => { await api('POST', '/players', { name }); await this.loadPlayers(); });
         },
+        // players enabled on a project (full objects), lookups, and navigation
+        attachedPlayers(p) { return this.players.filter(pl => (pl.projectIds || []).includes(p.id)); },
+        playerById(id) { return this.players.find(pl => pl.id === id); },
+        gotoPlayer(id) {
+            this.tab = 'players';
+            this.$nextTick(() => { const el = document.getElementById('player-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+        },
+        isActiveScene(pl, pid, sid) { return !!pl && pl.activeProjectId === pid && pl.activeSourceId === sid; },
+        projActiveKey(pl, pid) { return (pl && pl.activeProjectId === pid && pl.activeSourceId) ? pid + '|' + pl.activeSourceId : ''; },
         renamePlayer(pl) {
             const name = prompt('Player name', pl.name); if (!name) return;
             this.guard(async () => { await api('PUT', '/players/' + pl.id, { name }); await this.loadAll(); });
