@@ -12,6 +12,24 @@ async function api(method, pathname, body) {
     return ct.includes('application/json') ? r.json() : r.text();
 }
 
+// --- inline icons (stroke, currentColor) ---
+function svgIcon(inner) {
+    return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+}
+const ICONS = {
+    pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3"/><path d="M21 14v.01"/><path d="M14 21h.01"/><path d="M21 21v-3h-3"/>',
+    close: '<path d="M18 6 6 18"/><path d="M6 6l12 12"/>',
+    left: '<path d="M15 18l-6-6 6-6"/>',
+    right: '<path d="M9 18l6-6-6-6"/>',
+    down: '<path d="M6 9l6 6 6-6"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
+    plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+    archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>'
+};
+
 function adminApp() {
     return {
         tab: 'projects',
@@ -21,7 +39,18 @@ function adminApp() {
         newProjectName: '',
         newPlayerName: '',
         toast: '',
-        browser: { open: false, project: null, source: null, files: [], selected: {}, sort: 'date', dir: 'asc' },
+        // per-scene UI state (keyed by scene/source id)
+        expanded: {},
+        files: {},
+        sel: {},
+        uploading: {},
+        uploadTarget: null,
+        // overlays
+        lightbox: { open: false, files: [], index: 0 },
+        qr: { open: false, url: '', title: '' },
+        drag: { sid: null, from: -1 },
+
+        icon(name) { return svgIcon(ICONS[name] || ''); },
 
         async init() {
             try {
@@ -38,8 +67,8 @@ function adminApp() {
         base() { return (this.publicUrl || location.origin).replace(/\/$/, ''); },
         dropUrl(s) { return this.base() + '/d/' + s.dropToken; },
         playerUrl(pl) { return this.base() + '/p/' + pl.token; },
-        qrUrl(data) { return '/admin/api/qr?type=png&data=' + encodeURIComponent(data); },
-        copy(text) { navigator.clipboard.writeText(text).then(() => this.notify('Copied')); },
+        qrPng(data) { return '/admin/api/qr?type=png&data=' + encodeURIComponent(data); },
+        copy(text) { navigator.clipboard.writeText(text).then(() => this.notify('Link copied')); },
 
         async loadAll() { await this.loadProjects(); await this.loadPlayers(); },
         async loadProjects() { this.projects = (await api('GET', '/projects')).projects; },
@@ -58,17 +87,132 @@ function adminApp() {
             if (!confirm('Delete project "' + p.name + '"? Media files stay on disk.')) return;
             this.guard(async () => { await api('DELETE', '/projects/' + p.id); await this.loadAll(); });
         },
-        addSource(p, type) {
-            const name = prompt(type === 'drop' ? 'Drop name' : 'Folder name', type === 'drop' ? 'Public drop' : 'Files');
-            if (name === null) return;
-            this.guard(async () => { await api('POST', '/projects/' + p.id + '/sources', { type, name }); await this.loadProjects(); });
+
+        // ---- scenes ----
+        addScene(p) {
+            const name = prompt('Scene name', 'Scene'); if (name === null) return;
+            this.guard(async () => {
+                const r = await api('POST', '/projects/' + p.id + '/sources', { name: name.trim() || 'Scene', public: false });
+                this.replaceProject(r.project);
+            });
         },
-        deleteSource(p, s) {
-            if (!confirm('Delete source "' + s.name + '"? Files stay on disk.')) return;
-            this.guard(async () => { await api('DELETE', '/projects/' + p.id + '/sources/' + s.id); await this.loadAll(); });
+        renameScene(p, s) {
+            const name = prompt('Scene name', s.name); if (!name) return;
+            this.guard(async () => {
+                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { name: name.trim() });
+                this.replaceProject(r.project);
+            });
+        },
+        toggleScenePublic(p, s) {
+            this.guard(async () => {
+                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { public: !s.public });
+                this.replaceProject(r.project);
+                this.notify(s.public ? 'Scene is now public' : 'Scene is now private');
+            });
         },
         toggleSelfDelete(p, s) {
-            this.guard(async () => { await api('PUT', '/projects/' + p.id + '/sources/' + s.id, { allowSelfDelete: !s.allowSelfDelete }); await this.loadProjects(); });
+            this.guard(async () => {
+                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { allowSelfDelete: !s.allowSelfDelete });
+                this.replaceProject(r.project);
+            });
+        },
+        deleteScene(p, s) {
+            if (!confirm('Delete scene "' + s.name + '"? Files stay on disk.')) return;
+            this.guard(async () => {
+                const r = await api('DELETE', `/projects/${p.id}/sources/${s.id}`);
+                this.replaceProject(r.project);
+                delete this.expanded[s.id]; delete this.files[s.id]; delete this.sel[s.id];
+            });
+        },
+        replaceProject(project) {
+            const i = this.projects.findIndex(x => x.id === project.id);
+            if (i >= 0) this.projects.splice(i, 1, project); else this.projects.push(project);
+            // keep player attach views in sync (names may matter)
+            this.loadPlayers();
+        },
+
+        // ---- scene media (inline grid) ----
+        toggleExpand(p, s) {
+            this.expanded[s.id] = !this.expanded[s.id];
+            if (this.expanded[s.id] && !this.files[s.id]) this.loadFiles(p, s);
+        },
+        async loadFiles(p, s) {
+            await this.guard(async () => {
+                const r = await api('GET', `/projects/${p.id}/sources/${s.id}/files`);
+                this.files[s.id] = r.files;
+                this.sel[s.id] = {};
+            });
+        },
+        filesOf(s) { return this.files[s.id] || []; },
+
+        addMedia(p, s) { this.uploadTarget = { p, s }; this.$refs.fileInput.click(); },
+        onUpload(e) {
+            const input = e.target;
+            const files = input.files; if (!files || !files.length) return;
+            const { p, s } = this.uploadTarget || {};
+            if (!s) return;
+            const fd = new FormData();
+            for (const f of files) fd.append('files', f);
+            this.uploading[s.id] = true;
+            fetch(`/admin/api/projects/${p.id}/sources/${s.id}/upload`, { method: 'POST', body: fd })
+                .then(r => { if (!r.ok) throw new Error('upload failed'); })
+                .then(async () => { await this.loadFiles(p, s); await this.loadProjects(); this.notify('Uploaded ' + files.length); })
+                .catch(err => this.notify('Error: ' + err.message))
+                .finally(() => { this.uploading[s.id] = false; input.value = ''; });
+        },
+
+        // ---- selection + bulk ----
+        toggleSel(s, name, ev) { if (ev) ev.stopPropagation(); this.sel[s.id] = this.sel[s.id] || {}; this.sel[s.id][name] = !this.sel[s.id][name]; },
+        isSel(s, name) { return !!(this.sel[s.id] && this.sel[s.id][name]); },
+        selNames(s) { const m = this.sel[s.id] || {}; return Object.keys(m).filter(n => m[n]); },
+        selCount(s) { return this.selNames(s).length; },
+        bulk(op, p, s) {
+            const names = this.selNames(s); if (!names.length) return;
+            if (op === 'delete' && !confirm('Permanently delete ' + names.length + ' file(s)?')) return;
+            this.guard(async () => {
+                const r = await api('POST', '/files/' + op, { projectId: p.id, sourceId: s.id, names });
+                await this.loadFiles(p, s); await this.loadProjects();
+                this.notify(op + ': ' + r.count);
+            });
+        },
+
+        // ---- drag reorder ----
+        dragStart(s, i) { this.drag = { sid: s.id, from: i }; },
+        dropOn(p, s, i) {
+            if (this.drag.sid !== s.id || this.drag.from < 0) return;
+            const arr = this.files[s.id];
+            const [m] = arr.splice(this.drag.from, 1);
+            arr.splice(i, 0, m);
+            this.drag = { sid: null, from: -1 };
+            this.guard(async () => { await api('PUT', `/projects/${p.id}/sources/${s.id}/order`, { order: arr.map(f => f.name) }); });
+        },
+
+        // ---- lightbox ----
+        openLightbox(s, i) { this.lightbox = { open: true, files: this.files[s.id] || [], index: i }; },
+        lbCurrent() { return this.lightbox.files[this.lightbox.index] || null; },
+        lbNext() { const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index + 1) % n; },
+        lbPrev() { const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index - 1 + n) % n; },
+        lbClose() { this.lightbox.open = false; },
+
+        // ---- QR modal ----
+        openQr(url, title) { this.qr = { open: true, url, title: title || '' }; },
+        closeQr() { this.qr.open = false; },
+        async copyQrImage() {
+            try {
+                const blob = await (await fetch(this.qrPng(this.qr.url))).blob();
+                await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+                this.notify('QR image copied');
+            } catch (e) { this.notify('Copy not supported — use download'); }
+        },
+        async downloadQr() {
+            try {
+                const blob = await (await fetch(this.qrPng(this.qr.url))).blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'qr-' + (this.qr.title || 'dropfile').replace(/[^a-z0-9]+/gi, '-') + '.png';
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            } catch (e) { this.notify('Download failed'); }
         },
 
         // ---- players ----
@@ -86,8 +230,8 @@ function adminApp() {
         },
         isAttached(pl, projectId) { return (pl.projectIds || []).includes(projectId); },
         toggleAttach(pl, projectId) {
-            const path = '/players/' + pl.id + (this.isAttached(pl, projectId) ? '/detach' : '/attach');
-            this.guard(async () => { await api('POST', path, { projectId }); await this.loadAll(); });
+            const p = '/players/' + pl.id + (this.isAttached(pl, projectId) ? '/detach' : '/attach');
+            this.guard(async () => { await api('POST', p, { projectId }); await this.loadAll(); });
         },
         attachedProjects(pl) { return this.projects.filter(p => (pl.projectIds || []).includes(p.id)); },
         sourcesFor(pl) {
@@ -107,32 +251,7 @@ function adminApp() {
             this.guard(async () => { await api('PUT', '/players/' + pl.id + '/settings', { settings: pl.settings }); this.notify('Applied live'); });
         },
 
-        // ---- file browser ----
-        openBrowser(p, s) {
-            this.browser.open = true; this.browser.project = p; this.browser.source = s; this.browser.selected = {};
-            this.guard(() => this.loadFiles());
-        },
-        closeBrowser() { this.browser.open = false; },
-        async loadFiles() {
-            const b = this.browser;
-            const q = `/projects/${b.project.id}/files?source=${b.source.id}&sort=${b.sort}&dir=${b.dir}`;
-            b.files = (await api('GET', q)).files;
-        },
-        changeSort() { this.guard(() => this.loadFiles()); },
-        toggleSel(name) { this.browser.selected[name] = !this.browser.selected[name]; },
-        selectedNames() { return Object.keys(this.browser.selected).filter(n => this.browser.selected[n]); },
-        selectedCount() { return this.selectedNames().length; },
-        bulk(op) {
-            const names = this.selectedNames(); if (!names.length) return;
-            if (op === 'delete' && !confirm('Permanently delete ' + names.length + ' file(s)?')) return;
-            this.guard(async () => {
-                const r = await api('POST', '/files/' + op, { projectId: this.browser.project.id, sourceId: this.browser.source.id, names });
-                this.browser.selected = {}; await this.loadFiles(); this.notify(op + ': ' + r.count);
-            });
-        },
-
-        fmtSize(n) { if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(0) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; },
-        fmtDate(ms) { try { return new Date(ms).toLocaleString(); } catch (e) { return ''; } }
+        fmtSize(n) { if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(0) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
     };
 }
 window.adminApp = adminApp;

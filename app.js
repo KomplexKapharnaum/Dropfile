@@ -10,7 +10,7 @@ const socketIO = require('socket.io');
 const store = require('./lib/store');
 const thumbs = require('./lib/thumbs');
 const basicAuth = require('./lib/auth');
-const { maybeMigrate } = require('./lib/migrate');
+const { maybeMigrate, upgradeStore } = require('./lib/migrate');
 
 function build(opts = {}) {
     const UPLOAD_PATH = opts.UPLOAD_PATH || process.env.UPLOAD_PATH || path.join(__dirname, 'uploads');
@@ -23,6 +23,7 @@ function build(opts = {}) {
     }
     thumbs.init(UPLOAD_PATH);
     maybeMigrate(UPLOAD_PATH);
+    upgradeStore();
 
     const app = express();
     const server = http.createServer(app);

@@ -1,17 +1,18 @@
-// Admin API (password-gated in server.js) + static admin SPA.
+// Admin API (password-gated in app.js) + static admin SPA.
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 const QRCode = require('qrcode');
 const store = require('../lib/store');
 const ids = require('../lib/ids');
 const model = require('../lib/model');
 const thumbs = require('../lib/thumbs');
 const playlistLib = require('../lib/playlist');
-const { listMedia, safeSegment } = require('../lib/media');
+const { listMedia, orderMedia, safeSegment } = require('../lib/media');
 
 module.exports = function (ctx) {
-    const { UPLOAD_PATH, io } = ctx;
+    const { UPLOAD_PATH, UPLOAD_SIZE, io } = ctx;
     const api = express.Router();
 
     // ---- helpers (closure over ctx) ----------------------------------------
@@ -47,13 +48,23 @@ module.exports = function (ctx) {
         return out;
     }
 
+    function sceneCount(p, s) {
+        try { return listMedia(model.sourceDir(UPLOAD_PATH, p, s)).length; } catch (e) { return 0; }
+    }
+
+    function serializeScene(p, s) {
+        return {
+            id: s.id, name: s.name, folder: s.folder,
+            public: !!s.public, dropToken: s.dropToken,
+            allowSelfDelete: !!s.allowSelfDelete,
+            count: sceneCount(p, s)
+        };
+    }
+
     function serializeProject(p) {
         return {
             id: p.id, name: p.name, slug: p.slug, createdAt: p.createdAt,
-            sources: Object.values(p.sources || {}).map(s => ({
-                id: s.id, type: s.type, name: s.name, folder: s.folder,
-                dropToken: s.dropToken, allowSelfDelete: !!s.allowSelfDelete
-            })),
+            sources: Object.values(p.sources || {}).map(s => serializeScene(p, s)),
             players: model.projectPlayers(p.id).map(pl => ({ id: pl.id, name: pl.name }))
         };
     }
@@ -73,6 +84,18 @@ module.exports = function (ctx) {
             active: playlistLib.activeInfo(pl),
             media: playlistLib.playlist(UPLOAD_PATH, pl)
         });
+    }
+
+    function refreshSourcePlayers(sourceId) {
+        for (const pl of model.playersForSource(sourceId)) broadcastActive(pl);
+    }
+
+    function removeFromManifest(sourceId, filename) {
+        const manifest = store.data.uploads[sourceId];
+        if (!manifest) return;
+        for (const [fid, u] of Object.entries(manifest)) {
+            if (u.filename === filename) delete manifest[fid];
+        }
     }
 
     function bulkFiles(req, res, op) {
@@ -98,19 +121,39 @@ module.exports = function (ctx) {
                 removeFromManifest(s.id, name);
             } catch (e) { /* skip */ }
         }
+        // drop removed files from the explicit order
+        if (Array.isArray(s.order) && s.order.length) {
+            const present = new Set(listMedia(dir).map(m => m.name));
+            s.order = s.order.filter(n => present.has(n));
+        }
         store.save();
-        // refresh any players showing this source
-        for (const pl of model.playersForSource(s.id)) broadcastActive(pl);
+        refreshSourcePlayers(s.id);
         res.json({ ok: true, count });
     }
 
-    function removeFromManifest(sourceId, filename) {
-        const manifest = store.data.uploads[sourceId];
-        if (!manifest) return;
-        for (const [fid, u] of Object.entries(manifest)) {
-            if (u.filename === filename) delete manifest[fid];
-        }
+    // resolve :id/:sid -> req._project / req._source / req._dir (mkdir'd)
+    function resolveSource(req, res, next) {
+        const p = store.data.projects[req.params.id];
+        if (!p) return res.status(404).json({ error: 'project not found' });
+        const s = (p.sources || {})[req.params.sid];
+        if (!s) return res.status(404).json({ error: 'source not found' });
+        req._project = p; req._source = s;
+        req._dir = model.sourceDir(UPLOAD_PATH, p, s);
+        try { fs.mkdirSync(req._dir, { recursive: true }); } catch (e) {}
+        next();
     }
+
+    // multer for admin-side uploads (any scene)
+    const uploadStorage = multer.diskStorage({
+        destination: (req, file, cb) => cb(null, req._dir),
+        filename: (req, file, cb) => {
+            let ext = path.extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, '');
+            if (ext.length > 8) ext = ext.slice(0, 8);
+            const base = (safeSegment(path.basename(file.originalname, path.extname(file.originalname))) || 'media').slice(0, 40);
+            cb(null, `${base}-${ids.id().slice(0, 5)}${ext}`);
+        }
+    });
+    const upload = multer({ storage: uploadStorage, limits: { fileSize: UPLOAD_SIZE * 1024 * 1024 } });
 
     // ---- config + QR -------------------------------------------------------
     api.get('/config', (req, res) => {
@@ -124,7 +167,7 @@ module.exports = function (ctx) {
             if (String(req.query.type) === 'svg') {
                 res.type('svg').send(await QRCode.toString(data, { type: 'svg', margin: 1 }));
             } else {
-                res.type('png').send(await QRCode.toBuffer(data, { margin: 1, width: 320 }));
+                res.type('png').send(await QRCode.toBuffer(data, { margin: 1, width: 600 }));
             }
         } catch (e) {
             res.status(500).send('qr error');
@@ -169,33 +212,36 @@ module.exports = function (ctx) {
         res.json({ ok: true }); // media left on disk on purpose
     });
 
-    // ---- sources -----------------------------------------------------------
+    // ---- scenes (sources) --------------------------------------------------
+    // One unified create; a scene is public or private. dropToken is always
+    // minted so toggling public is instant. New scenes default to private.
     api.post('/projects/:id/sources', (req, res) => {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
-        const type = req.body.type === 'preloaded' ? 'preloaded' : 'drop';
-        const name = String(req.body.name || (type === 'drop' ? 'Drop' : 'Files')).trim();
+        const name = String(req.body.name || 'Scene').trim() || 'Scene';
         const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));
         const sid = ids.id();
         p.sources = p.sources || {};
         p.sources[sid] = {
-            id: sid, type, name, folder,
-            dropToken: type === 'drop' ? ids.token() : null,
-            allowSelfDelete: type === 'drop'
+            id: sid, name, folder,
+            public: !!req.body.public,
+            dropToken: ids.token(),
+            allowSelfDelete: true,
+            order: [],
+            createdAt: Date.now()
         };
         try { fs.mkdirSync(path.join(UPLOAD_PATH, p.slug, folder), { recursive: true }); } catch (e) {}
         store.save();
-        res.json({ source: p.sources[sid], project: serializeProject(p) });
+        res.json({ project: serializeProject(p) });
     });
 
-    api.put('/projects/:id/sources/:sid', (req, res) => {
-        const p = store.data.projects[req.params.id];
-        if (!p || !(p.sources || {})[req.params.sid]) return res.status(404).json({ error: 'not found' });
-        const s = p.sources[req.params.sid];
+    api.put('/projects/:id/sources/:sid', resolveSource, (req, res) => {
+        const s = req._source;
         if (req.body.name) s.name = String(req.body.name).trim();
+        if (typeof req.body.public === 'boolean') s.public = req.body.public;
         if (typeof req.body.allowSelfDelete === 'boolean') s.allowSelfDelete = req.body.allowSelfDelete;
         store.save();
-        res.json({ source: s });
+        res.json({ project: serializeProject(req._project) });
     });
 
     api.delete('/projects/:id/sources/:sid', (req, res) => {
@@ -203,14 +249,57 @@ module.exports = function (ctx) {
         if (!p || !(p.sources || {})[req.params.sid]) return res.status(404).json({ error: 'not found' });
         const sid = req.params.sid;
         for (const pl of Object.values(store.data.players)) {
-            if (pl.activeSourceId === sid) {
-                pl.activeSourceId = null; pl.activeProjectId = pl.activeProjectId; broadcastActive(pl);
-            }
+            if (pl.activeSourceId === sid) { pl.activeSourceId = null; broadcastActive(pl); }
         }
         delete p.sources[sid];
         delete store.data.uploads[sid];
         store.save();
+        res.json({ project: serializeProject(p) });
+    });
+
+    // ---- scene media: list / upload / reorder ------------------------------
+    api.get('/projects/:id/sources/:sid/files', resolveSource, (req, res) => {
+        const files = orderMedia(listMedia(req._dir), req._source.order).map(m => ({
+            name: m.name, type: m.type, size: m.size, mtime: m.mtime,
+            url: model.mediaUrl(req._project, req._source, m.name),
+            thumb: `/admin/api/thumb?project=${req._project.id}&source=${req._source.id}&name=${encodeURIComponent(m.name)}`
+        }));
+        res.json({ files });
+    });
+
+    api.post('/projects/:id/sources/:sid/upload', resolveSource, upload.array('files', 50), (req, res) => {
+        const added = (req.files || []).map(f => f.filename);
+        // new uploads stay out of the explicit order -> appended by upload time
+        refreshSourcePlayers(req._source.id);
+        res.json({ ok: true, added, count: added.length });
+    });
+
+    api.put('/projects/:id/sources/:sid/order', resolveSource, (req, res) => {
+        const present = new Set(listMedia(req._dir).map(m => m.name));
+        const order = (Array.isArray(req.body.order) ? req.body.order : [])
+            .map(n => safeSegment(n)).filter(n => present.has(n));
+        req._source.order = order;
+        store.save();
+        refreshSourcePlayers(req._source.id);
         res.json({ ok: true });
+    });
+
+    api.post('/files/delete', (req, res) => bulkFiles(req, res, 'delete'));
+    api.post('/files/archive', (req, res) => bulkFiles(req, res, 'archive'));
+
+    api.get('/thumb', async (req, res) => {
+        const p = store.data.projects[req.query.project];
+        if (!p) return res.status(404).end();
+        const s = (p.sources || {})[req.query.source];
+        if (!s) return res.status(404).end();
+        const name = safeSegment(req.query.name);
+        const file = path.join(model.sourceDir(UPLOAD_PATH, p, s), name);
+        if (!name || !fs.existsSync(file)) return res.status(404).end();
+        try {
+            res.sendFile(await thumbs.getThumb(file));
+        } catch (e) {
+            res.status(500).end();
+        }
     });
 
     // ---- players (pool) ----------------------------------------------------
@@ -289,47 +378,6 @@ module.exports = function (ctx) {
         io.to('player:' + pl.token).emit('settings', pl.settings);
         res.json({ player: serializePlayer(pl) });
     });
-
-    // ---- file browser ------------------------------------------------------
-    api.get('/projects/:id/files', (req, res) => {
-        const p = store.data.projects[req.params.id];
-        if (!p) return res.status(404).json({ error: 'not found' });
-        const s = (p.sources || {})[req.query.source];
-        if (!s) return res.status(404).json({ error: 'source not found' });
-        const dir = model.sourceDir(UPLOAD_PATH, p, s);
-        const sort = req.query.sort || 'date';
-        const sign = req.query.dir === 'desc' ? -1 : 1;
-        const files = listMedia(dir).sort((a, b) => {
-            let c;
-            if (sort === 'name') c = a.name.localeCompare(b.name);
-            else if (sort === 'size') c = a.size - b.size;
-            else c = a.mtime - b.mtime;
-            return c * sign;
-        }).map(m => ({
-            name: m.name, type: m.type, size: m.size, mtime: m.mtime,
-            url: model.mediaUrl(p, s, m.name),
-            thumb: `/admin/api/thumb?project=${p.id}&source=${s.id}&name=${encodeURIComponent(m.name)}`
-        }));
-        res.json({ files });
-    });
-
-    api.get('/thumb', async (req, res) => {
-        const p = store.data.projects[req.query.project];
-        if (!p) return res.status(404).end();
-        const s = (p.sources || {})[req.query.source];
-        if (!s) return res.status(404).end();
-        const name = safeSegment(req.query.name);
-        const file = path.join(model.sourceDir(UPLOAD_PATH, p, s), name);
-        if (!name || !fs.existsSync(file)) return res.status(404).end();
-        try {
-            res.sendFile(await thumbs.getThumb(file));
-        } catch (e) {
-            res.status(500).end();
-        }
-    });
-
-    api.post('/files/delete', (req, res) => bulkFiles(req, res, 'delete'));
-    api.post('/files/archive', (req, res) => bulkFiles(req, res, 'archive'));
 
     return { api, page: express.static(path.join(__dirname, '..', 'www', 'admin')) };
 };

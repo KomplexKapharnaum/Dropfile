@@ -9,7 +9,12 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
 <body>
-<div id="app" x-data="adminApp()" x-init="init()">
+<div id="app" x-data="adminApp()" x-init="init()"
+     @keydown.window.arrow-right="lightbox.open && lbNext()"
+     @keydown.window.arrow-left="lightbox.open && lbPrev()"
+     @keydown.window.escape="lightbox.open ? lbClose() : (qr.open && closeQr())">
+
+    <input type="file" multiple x-ref="fileInput" @change="onUpload($event)" style="display:none">
 
     <header class="topbar">
         <h1>Dropfile <span class="muted">media controller</span></h1>
@@ -31,42 +36,78 @@
         <template x-for="p in projects" :key="p.id">
             <section class="card">
                 <div class="card-head">
-                    <h2 x-text="p.name"></h2>
+                    <div class="title-wrap">
+                        <h2 x-text="p.name"></h2>
+                        <button class="iconbtn" title="Rename" @click="renameProject(p)" x-html="icon('pencil')"></button>
+                    </div>
                     <div class="actions">
-                        <button @click="addSource(p,'drop')">+ Drop source</button>
-                        <button @click="addSource(p,'preloaded')">+ Preloaded source</button>
-                        <button @click="renameProject(p)">Rename</button>
-                        <button class="danger" @click="deleteProject(p)">Delete</button>
+                        <button @click="addScene(p)"><span x-html="icon('plus')"></span> Scene</button>
+                        <button class="iconbtn danger" title="Delete project" @click="deleteProject(p)" x-html="icon('trash')"></button>
                     </div>
                 </div>
 
-                <div class="sources">
+                <div class="scenes">
                     <template x-for="s in p.sources" :key="s.id">
-                        <div class="source">
-                            <div class="source-main">
-                                <span class="badge" :class="s.type" x-text="s.type"></span>
-                                <strong x-text="s.name"></strong>
-                                <button @click="openBrowser(p,s)">Browse</button>
-                                <button class="danger" @click="deleteSource(p,s)">×</button>
+                        <div class="scene">
+                            <div class="scene-head">
+                                <button class="iconbtn chev" :class="{open: expanded[s.id]}" @click="toggleExpand(p,s)" x-html="icon('down')"></button>
+                                <strong class="scene-name" x-text="s.name" @click="toggleExpand(p,s)"></strong>
+                                <button class="iconbtn" title="Rename scene" @click="renameScene(p,s)" x-html="icon('pencil')"></button>
+
+                                <label class="switch" :title="s.public ? 'Public — has a drop URL' : 'Private — admin only'">
+                                    <input type="checkbox" :checked="s.public" @change="toggleScenePublic(p,s)">
+                                    <span class="slider"></span>
+                                    <span class="switch-label" x-text="s.public ? 'public' : 'private'"></span>
+                                </label>
+
+                                <span class="count" x-text="s.count + (s.count===1 ? ' file' : ' files')"></span>
+                                <span class="spacer"></span>
+                                <button class="iconbtn danger" title="Delete scene" @click="deleteScene(p,s)" x-html="icon('trash')"></button>
                             </div>
-                            <template x-if="s.type==='drop'">
-                                <div class="drop-share">
-                                    <img class="qr" :src="qrUrl(dropUrl(s))" alt="QR">
-                                    <div class="share-info">
-                                        <a :href="dropUrl(s)" target="_blank" x-text="dropUrl(s)"></a>
-                                        <div class="share-actions">
-                                            <button @click="copy(dropUrl(s))">Copy link</button>
-                                            <label class="chk">
-                                                <input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(p,s)">
-                                                let uploaders delete their own
-                                            </label>
-                                        </div>
-                                    </div>
+
+                            <div class="scene-share" x-show="s.public" x-cloak>
+                                <a :href="dropUrl(s)" target="_blank" class="url" x-text="dropUrl(s)"></a>
+                                <button class="iconbtn" title="Copy link" @click="copy(dropUrl(s))" x-html="icon('copy')"></button>
+                                <button class="iconbtn" title="Show QR" @click="openQr(dropUrl(s), p.name + ' / ' + s.name)" x-html="icon('qr')"></button>
+                                <label class="chk small">
+                                    <input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(p,s)">
+                                    uploaders can delete own
+                                </label>
+                            </div>
+
+                            <div class="scene-body" x-show="expanded[s.id]" x-cloak>
+                                <div class="grid-tools">
+                                    <button @click="addMedia(p,s)"><span x-html="icon('plus')"></span> Add media</button>
+                                    <span class="muted" x-show="uploading[s.id]">uploading…</span>
+                                    <span class="spacer"></span>
+                                    <template x-if="selCount(s) > 0">
+                                        <span class="bulk">
+                                            <span class="muted" x-text="selCount(s) + ' selected'"></span>
+                                            <button @click="bulk('archive',p,s)"><span x-html="icon('archive')"></span> Archive</button>
+                                            <button class="danger" @click="bulk('delete',p,s)"><span x-html="icon('trash')"></span> Delete</button>
+                                        </span>
+                                    </template>
                                 </div>
-                            </template>
+
+                                <p class="muted hint" x-show="(files[s.id]||[]).length">Drag thumbnails to reorder · click to preview</p>
+
+                                <div class="grid">
+                                    <template x-for="(f, idx) in filesOf(s)" :key="f.name">
+                                        <div class="tile" :class="{sel: isSel(s,f.name)}"
+                                             draggable="true"
+                                             @dragstart="dragStart(s,idx)" @dragover.prevent @drop.prevent="dropOn(p,s,idx)"
+                                             @click="openLightbox(s,idx)">
+                                            <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
+                                            <img :src="f.thumb" loading="lazy" alt="">
+                                            <span class="vbadge" x-show="f.type==='video'">▶</span>
+                                        </div>
+                                    </template>
+                                    <p class="muted" x-show="(files[s.id]||[]).length===0">Empty — add media or share the drop link.</p>
+                                </div>
+                            </div>
                         </div>
                     </template>
-                    <p class="muted" x-show="p.sources.length===0">No sources yet — add a drop or preloaded source.</p>
+                    <p class="muted" x-show="p.sources.length===0">No scenes yet — add one.</p>
                 </div>
 
                 <div class="attached" x-show="players.length">
@@ -93,18 +134,20 @@
         <template x-for="pl in players" :key="pl.id">
             <section class="card">
                 <div class="card-head">
-                    <h2 x-text="pl.name"></h2>
+                    <div class="title-wrap">
+                        <h2 x-text="pl.name"></h2>
+                        <button class="iconbtn" title="Rename" @click="renamePlayer(pl)" x-html="icon('pencil')"></button>
+                    </div>
                     <div class="actions">
-                        <button @click="renamePlayer(pl)">Rename</button>
-                        <button class="danger" @click="deletePlayer(pl)">Delete</button>
+                        <button class="iconbtn danger" title="Delete player" @click="deletePlayer(pl)" x-html="icon('trash')"></button>
                     </div>
                 </div>
 
                 <div class="player-grid">
                     <div class="player-share">
-                        <img class="qr" :src="qrUrl(playerUrl(pl))" alt="QR">
+                        <img class="qr" :src="qrPng(playerUrl(pl))" alt="QR" @click="openQr(playerUrl(pl), pl.name)">
                         <a :href="playerUrl(pl)" target="_blank" x-text="playerUrl(pl)"></a>
-                        <button @click="copy(playerUrl(pl))">Copy link</button>
+                        <button @click="copy(playerUrl(pl))"><span x-html="icon('copy')"></span> Copy link</button>
                     </div>
 
                     <div class="player-config">
@@ -220,39 +263,31 @@
         <p class="muted" x-show="players.length===0">No players yet.</p>
     </main>
 
-    <!-- ===================== FILE BROWSER ===================== -->
-    <div class="modal" x-show="browser.open" x-cloak @keydown.escape.window="closeBrowser()">
-        <div class="modal-box">
-            <div class="modal-head">
-                <h3><span x-text="browser.project && browser.project.name"></span> /
-                    <span x-text="browser.source && browser.source.name"></span></h3>
-                <div class="browser-tools">
-                    <select x-model="browser.sort" @change="changeSort()">
-                        <option value="date">upload date</option>
-                        <option value="name">name</option>
-                        <option value="size">size</option>
-                    </select>
-                    <select x-model="browser.dir" @change="changeSort()">
-                        <option value="asc">asc</option>
-                        <option value="desc">desc</option>
-                    </select>
-                    <button @click="bulk('archive')" :disabled="selectedCount()===0">Archive (<span x-text="selectedCount()"></span>)</button>
-                    <button class="danger" @click="bulk('delete')" :disabled="selectedCount()===0">Delete</button>
-                    <button @click="closeBrowser()">Close</button>
-                </div>
-            </div>
-            <div class="grid">
-                <template x-for="f in browser.files" :key="f.name">
-                    <div class="tile" :class="{sel: browser.selected[f.name]}" @click="toggleSel(f.name)">
-                        <img :src="f.thumb" loading="lazy" alt="">
-                        <span class="vbadge" x-show="f.type==='video'">▶</span>
-                        <div class="meta">
-                            <span x-text="fmtSize(f.size)"></span>
-                            <span x-text="fmtDate(f.mtime)"></span>
-                        </div>
-                    </div>
-                </template>
-                <p class="muted" x-show="browser.files.length===0">Empty.</p>
+    <!-- ===================== LIGHTBOX ===================== -->
+    <div class="lb" x-show="lightbox.open" x-cloak @click="lbClose()">
+        <button class="iconbtn lb-nav" @click.stop="lbPrev()" x-html="icon('left')"></button>
+        <div class="lb-stage" @click.stop>
+            <template x-if="lbCurrent() && lbCurrent().type==='image'">
+                <img :src="lbCurrent().url" alt="">
+            </template>
+            <template x-if="lbCurrent() && lbCurrent().type==='video'">
+                <video :src="lbCurrent().url" controls autoplay loop></video>
+            </template>
+        </div>
+        <button class="iconbtn lb-nav" @click.stop="lbNext()" x-html="icon('right')"></button>
+        <button class="iconbtn lb-close" @click.stop="lbClose()" x-html="icon('close')"></button>
+    </div>
+
+    <!-- ===================== QR MODAL ===================== -->
+    <div class="modal" x-show="qr.open" x-cloak @click="closeQr()">
+        <div class="modal-box qr-box" @click.stop>
+            <h3 x-text="qr.title"></h3>
+            <img class="qr-big" :src="qrPng(qr.url)" alt="QR">
+            <p class="muted urlbreak" x-text="qr.url"></p>
+            <div class="row">
+                <button @click="copyQrImage()"><span x-html="icon('copy')"></span> Copy image</button>
+                <button @click="downloadQr()"><span x-html="icon('download')"></span> Download</button>
+                <button @click="closeQr()">Close</button>
             </div>
         </div>
     </div>

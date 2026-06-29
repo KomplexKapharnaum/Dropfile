@@ -8,10 +8,13 @@ Dropfile turns drop-folders and displays into a small **media controller**:
   projects and points at one **active source** at a time. Re-pointing it is a
   live action — the URL and scaler config belong to the *screen*, not the content.
 - **Projects** — content groupings.
-- **Sources** — a folder of media inside a project:
-  - `drop` — a public **blind drop box** (QR/URL). Uploaders only ever see and
-    delete *their own* files, never anyone else's.
-  - `preloaded` — files placed/managed by the admin.
+- **Scenes** — a folder of media inside a project. A scene is **public** or
+  **private** (toggle):
+  - **public** — exposes a **blind drop box** URL (+QR). Uploaders only ever see
+    and delete *their own* files, never anyone else's.
+  - **private** — no public URL; admin-managed only.
+  - Either way the admin can add media and **reorder** it (drag); the chosen
+    order drives playback. New uploads append in upload-time order.
 
 Admin changes are pushed live to every open player over WebSocket.
 
@@ -49,7 +52,7 @@ cp .env.example .env     # then edit .env
 
 Config and media live on the filesystem — there is no database server. On first
 boot with an empty store, existing top-level folders under `UPLOAD_PATH` are
-imported as projects with a `preloaded` source.
+imported as projects with one **public scene**.
 
 ## Run
 
