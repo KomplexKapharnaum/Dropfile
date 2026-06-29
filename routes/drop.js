@@ -45,7 +45,8 @@ module.exports = function (ctx) {
         res.json({
             project: req.dropProject.name,
             source: req.dropSource.name,
-            allowSelfDelete: !!req.dropSource.allowSelfDelete
+            allowSelfDelete: !!req.dropSource.allowSelfDelete,
+            accept: req.dropSource.accept || { image: true, video: true, text: false }
         });
     });
 
@@ -54,6 +55,11 @@ module.exports = function (ctx) {
         if (!req.file) return res.status(400).json({ error: 'no file' });
         const filename = req.file.filename;
         const type = mediaType(filename);
+        const accept = req.dropSource.accept || { image: true, video: true, text: false };
+        if (!type || (type === 'image' && !accept.image) || (type === 'video' && !accept.video)) {
+            try { fs.unlinkSync(req.file.path); } catch (e) {}
+            return res.status(415).json({ error: 'file type not allowed here' });
+        }
         const visitor = String(req.body.visitor || '').slice(0, 64);
         const nick = safeNick(req.body.nick) || 'anon';
         const fileId = ids.id();
@@ -72,6 +78,26 @@ module.exports = function (ctx) {
                 io.to('player:' + p.token).emit('new-media', payload);
             }
         }
+        res.json({ ok: true, fileId });
+    });
+
+    // submit a text message -> saved as a .txt file (when the scene accepts text)
+    router.post('/api/drop/:token/text', resolveDrop, (req, res) => {
+        const accept = req.dropSource.accept || {};
+        if (!accept.text) return res.status(403).json({ error: 'text not accepted here' });
+        const text = String(req.body.text || '').slice(0, 100000);
+        if (!text.trim()) return res.status(400).json({ error: 'empty text' });
+        const nick = safeNick(req.body.nick) || 'anon';
+        const visitor = String(req.body.visitor || '').slice(0, 64);
+        const filename = `${nick}_${Date.now()}_${ids.id().slice(0, 6)}.txt`;
+        try { fs.writeFileSync(path.join(req.dropDir, filename), text, 'utf8'); }
+        catch (e) { return res.status(500).json({ error: 'write failed' }); }
+
+        const fileId = ids.id();
+        const sid = req.dropSource.id;
+        store.data.uploads[sid] = store.data.uploads[sid] || {};
+        store.data.uploads[sid][fileId] = { filename, uploaderToken: visitor, nick, time: Date.now(), type: 'text' };
+        store.save();
         res.json({ ok: true, fileId });
     });
 

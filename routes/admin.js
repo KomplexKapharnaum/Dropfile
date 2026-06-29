@@ -52,11 +52,34 @@ module.exports = function (ctx) {
         try { return listMedia(model.sourceDir(UPLOAD_PATH, p, s)).length; } catch (e) { return 0; }
     }
 
+    function defaultAccept() { return { image: true, video: true, text: false }; }
+    function cleanAccept(a) { return { image: !!a.image, video: !!a.video, text: !!a.text }; }
+
+    // create a scene under project p (shared by project-create and scene-create)
+    function makeScene(p, name, isPublic, accept) {
+        const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));
+        const sid = ids.id();
+        const scene = {
+            id: sid, name, folder,
+            public: !!isPublic, dropToken: ids.token(),
+            allowSelfDelete: true, order: [],
+            accept: accept ? cleanAccept(accept) : defaultAccept(),
+            createdAt: Date.now()
+        };
+        p.sources = p.sources || {};
+        p.sources[sid] = scene;
+        p.sceneOrder = p.sceneOrder || [];
+        p.sceneOrder.push(sid);
+        try { fs.mkdirSync(path.join(UPLOAD_PATH, p.slug, folder), { recursive: true }); } catch (e) {}
+        return scene;
+    }
+
     function serializeScene(p, s) {
         return {
             id: s.id, name: s.name, folder: s.folder,
             public: !!s.public, dropToken: s.dropToken,
             allowSelfDelete: !!s.allowSelfDelete,
+            accept: s.accept ? cleanAccept(s.accept) : defaultAccept(),
             count: sceneCount(p, s)
         };
     }
@@ -195,10 +218,12 @@ module.exports = function (ctx) {
         if (!name) return res.status(400).json({ error: 'name required' });
         const slug = ids.uniqueSlug(ids.slugify(name), Object.values(store.data.projects).map(p => p.slug));
         const id = ids.id();
-        store.data.projects[id] = { id, name, slug, createdAt: Date.now(), sources: {}, sceneOrder: [] };
+        const project = { id, name, slug, createdAt: Date.now(), sources: {}, sceneOrder: [] };
+        store.data.projects[id] = project;
         try { fs.mkdirSync(path.join(UPLOAD_PATH, slug), { recursive: true }); } catch (e) {}
+        makeScene(project, 'Drop', true);  // every new project starts with a public Drop scene
         store.save();
-        res.json({ project: serializeProject(store.data.projects[id]) });
+        res.json({ project: serializeProject(project) });
     });
 
     api.put('/projects/:id', (req, res) => {
@@ -230,20 +255,7 @@ module.exports = function (ctx) {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
         const name = String(req.body.name || 'Scene').trim() || 'Scene';
-        const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));
-        const sid = ids.id();
-        p.sources = p.sources || {};
-        p.sources[sid] = {
-            id: sid, name, folder,
-            public: !!req.body.public,
-            dropToken: ids.token(),
-            allowSelfDelete: true,
-            order: [],
-            createdAt: Date.now()
-        };
-        p.sceneOrder = p.sceneOrder || [];
-        p.sceneOrder.push(sid);
-        try { fs.mkdirSync(path.join(UPLOAD_PATH, p.slug, folder), { recursive: true }); } catch (e) {}
+        makeScene(p, name, !!req.body.public, req.body.accept);
         store.save();
         res.json({ project: serializeProject(p) });
     });
@@ -265,6 +277,7 @@ module.exports = function (ctx) {
         if (req.body.name) s.name = String(req.body.name).trim();
         if (typeof req.body.public === 'boolean') s.public = req.body.public;
         if (typeof req.body.allowSelfDelete === 'boolean') s.allowSelfDelete = req.body.allowSelfDelete;
+        if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
         store.save();
         res.json({ project: serializeProject(req._project) });
     });

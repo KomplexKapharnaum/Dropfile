@@ -84,6 +84,12 @@
                                       x-text="pad(idx+1)"></span>
                                 <strong class="scene-name" x-text="s.name"></strong>
                                 <button class="iconbtn" title="Rename scene" @click.stop="renameScene(p,s)" x-html="icon('pencil')"></button>
+                                <span class="typetoggle" x-show="s.public" @click.stop>
+                                    <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(p,s)" title="Accept all types">All</button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(p,s,'image')" title="Images" x-html="icon('image')"></button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(p,s,'video')" title="Videos" x-html="icon('video')"></button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(p,s,'text')" title="Text" x-html="icon('text')"></button>
+                                </span>
                                 <span class="spacer"></span>
                                 <span class="count" x-text="s.count + (s.count===1 ? ' file' : ' files')"></span>
                                 <button class="iconbtn chev" :class="{open: expanded[s.id]}" x-html="icon('down')"></button>

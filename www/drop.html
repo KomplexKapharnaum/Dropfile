@@ -12,8 +12,8 @@
 <body>
     <header>
         <div class="titles">
-            <h1 id="sourceName">Drop</h1>
-            <p id="projectName" class="muted"></p>
+            <h1 id="projTitle">Drop</h1>
+            <p id="sceneTitle" class="muted"></p>
         </div>
         <button id="shareBtn" title="Share">⤴ Share</button>
     </header>
@@ -24,7 +24,14 @@
         </label>
     </section>
 
-    <div id="dz" class="dropzone"></div>
+    <div id="dz" class="dropzone hidden"></div>
+
+    <section id="textBox" class="textbox hidden">
+        <label>Your message
+            <textarea id="textInput" rows="4" placeholder="Type a message…"></textarea>
+        </label>
+        <button id="sendText">Send text</button>
+    </section>
 
     <section id="mine">
         <h2>Your uploads <span id="mineHint" class="muted"></span></h2>
