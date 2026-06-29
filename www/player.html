@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dropfile · Player</title>
+    <link rel="stylesheet" href="/player.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div id="stage">
+        <canvas id="surface"></canvas>
+        <div id="overlay" class="overlay">
+            <div id="status">connecting…</div>
+        </div>
+        <div id="counter" class="counter"></div>
+    </div>
+    <script src="/player.js"></script>
+</body>
+</html>

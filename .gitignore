@@ -1,6 +1,10 @@
 .env
 filebrowser.db
 
+# Dropfile runtime data
+data/
+uploads/
+
 # Logs
 logs
 *.log

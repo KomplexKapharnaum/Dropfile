@@ -41,7 +41,7 @@ Projects  (content grouping)
 | Restart behaviour | **Players survive restart** — state read from `db.json`, auto-resume active source |
 | `loop: lastX` | Means **last X *uploaded*** (newest X by upload time) |
 | Camera | **WebRTC** (audio+video, front/back switch), Socket.IO signaling — Phase 2 |
-| WebRTC NAT | **Self-hosted coturn** (STUN+TURN); ICE via `.env`; install = ops step in README |
+| WebRTC NAT | **Self-hosted coturn** (STUN+TURN) on the public box; short-lived ICE creds via `lib/turn.js` (coturn `use-auth-secret`, no static password shipped to clients); install = ops step in README |
 | Front-end | **Vanilla + Alpine.js** (CDN, ~10KB), no build step |
 | Thumbnails | **sharp** (images) + **ffmpeg** (video posters), cached on disk |
 | Drop privacy | **Blind box** — uploader never sees others' media; may see/remove only *their own* (visitor token) |
@@ -134,6 +134,7 @@ lib/ids.js           # id/token (crypto) + slug helpers
 lib/media.js         # ext detection, mtime listing, sanitize helpers
 lib/thumbs.js        # sharp + ffmpeg thumbnail cache (sha-keyed)
 lib/auth.js          # Basic-auth middleware (ADMIN_PASSWORD)
+lib/turn.js          # WebRTC ICE: short-lived coturn creds (use-auth-secret)
 lib/migrate.js       # one-time import of existing folders → projects
 routes/drop.js       # /d, /api/drop/*
 routes/player.js     # /p, /api/player/*
@@ -163,7 +164,7 @@ www/
 
 Add: `sharp`, `qrcode`; `alpinejs` via CDN. `ffmpeg` via `child_process` for video posters. **Remove:** `express-http-proxy`, `body-parser`; drop external `filebrowser`.
 
-New `.env` keys (see `.env.example`): `PUBLIC_URL`, `ADMIN_PASSWORD`, `DATA_PATH`, and Phase-2 `STUN_URL`/`TURN_URL`/`TURN_USER`/`TURN_PASS`.
+New `.env` keys (see `.env.example`): `PUBLIC_URL`, `ADMIN_PASSWORD`, `DATA_PATH`, and Phase-2 `TURN_HOST`/`TURN_SECRET`/`TURN_TTL`.
 
 ## Migration (`lib/migrate.js`, run on first boot if `db.json` absent)
 
@@ -184,7 +185,7 @@ Scan `UPLOAD_PATH`; for each existing valid top-level dir create a project with 
 
 ## Phase 2 — Camera takeover (WebRTC)
 
-`/p/:playerToken/cam` phone sender; Socket.IO signaling (`cam-offer`/`cam-answer`/`cam-ice` in the player room); ICE from `.env`; front/back switch; player `sourceMode: camera` with takeover/release. **README** documents coturn install + config (ports 3478/5349, realm, static-auth-secret or user/pass, `external-ip`) and the `.env` ICE keys.
+`/p/:playerToken/cam` phone sender; Socket.IO signaling (`cam-offer`/`cam-answer`/`cam-ice` in the player room); ICE servers built by `lib/turn.js` from `.env` (coturn `use-auth-secret` → short-lived HMAC creds, no static password shipped to clients); front/back switch; player `sourceMode: camera` with takeover/release. **README** documents coturn install + config (public box, ports 3478/5349 + relay range, realm, `static-auth-secret`, `external-ip`) — see `extra/turnserver.conf`.
 
 ## Phase 3 — MIDI source
 

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropfile · Admin</title>
+    <link rel="stylesheet" href="/admin/admin.css">
+    <script src="/admin/admin.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+</head>
+<body>
+<div id="app" x-data="adminApp()" x-init="init()">
+
+    <header class="topbar">
+        <h1>Dropfile <span class="muted">media controller</span></h1>
+        <nav class="tabs">
+            <button :class="{active: tab==='projects'}" @click="tab='projects'">Projects</button>
+            <button :class="{active: tab==='players'}" @click="tab='players'">Players</button>
+        </nav>
+    </header>
+
+    <div class="toast" x-show="toast" x-text="toast" x-cloak></div>
+
+    <!-- ===================== PROJECTS ===================== -->
+    <main x-show="tab==='projects'" x-cloak>
+        <div class="newrow">
+            <input type="text" placeholder="New project name" x-model="newProjectName" @keydown.enter="createProject()">
+            <button class="primary" @click="createProject()">+ Project</button>
+        </div>
+
+        <template x-for="p in projects" :key="p.id">
+            <section class="card">
+                <div class="card-head">
+                    <h2 x-text="p.name"></h2>
+                    <div class="actions">
+                        <button @click="addSource(p,'drop')">+ Drop source</button>
+                        <button @click="addSource(p,'preloaded')">+ Preloaded source</button>
+                        <button @click="renameProject(p)">Rename</button>
+                        <button class="danger" @click="deleteProject(p)">Delete</button>
+                    </div>
+                </div>
+
+                <div class="sources">
+                    <template x-for="s in p.sources" :key="s.id">
+                        <div class="source">
+                            <div class="source-main">
+                                <span class="badge" :class="s.type" x-text="s.type"></span>
+                                <strong x-text="s.name"></strong>
+                                <button @click="openBrowser(p,s)">Browse</button>
+                                <button class="danger" @click="deleteSource(p,s)">×</button>
+                            </div>
+                            <template x-if="s.type==='drop'">
+                                <div class="drop-share">
+                                    <img class="qr" :src="qrUrl(dropUrl(s))" alt="QR">
+                                    <div class="share-info">
+                                        <a :href="dropUrl(s)" target="_blank" x-text="dropUrl(s)"></a>
+                                        <div class="share-actions">
+                                            <button @click="copy(dropUrl(s))">Copy link</button>
+                                            <label class="chk">
+                                                <input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(p,s)">
+                                                let uploaders delete their own
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <p class="muted" x-show="p.sources.length===0">No sources yet — add a drop or preloaded source.</p>
+                </div>
+
+                <div class="attached" x-show="players.length">
+                    <span class="muted">Players:</span>
+                    <template x-for="pl in players" :key="pl.id">
+                        <label class="chk pill">
+                            <input type="checkbox" :checked="isAttached(pl,p.id)" @change="toggleAttach(pl,p.id)">
+                            <span x-text="pl.name"></span>
+                        </label>
+                    </template>
+                </div>
+            </section>
+        </template>
+        <p class="muted" x-show="projects.length===0">No projects yet.</p>
+    </main>
+
+    <!-- ===================== PLAYERS ===================== -->
+    <main x-show="tab==='players'" x-cloak>
+        <div class="newrow">
+            <input type="text" placeholder="New player nickname" x-model="newPlayerName" @keydown.enter="createPlayer()">
+            <button class="primary" @click="createPlayer()">+ Player</button>
+        </div>
+
+        <template x-for="pl in players" :key="pl.id">
+            <section class="card">
+                <div class="card-head">
+                    <h2 x-text="pl.name"></h2>
+                    <div class="actions">
+                        <button @click="renamePlayer(pl)">Rename</button>
+                        <button class="danger" @click="deletePlayer(pl)">Delete</button>
+                    </div>
+                </div>
+
+                <div class="player-grid">
+                    <div class="player-share">
+                        <img class="qr" :src="qrUrl(playerUrl(pl))" alt="QR">
+                        <a :href="playerUrl(pl)" target="_blank" x-text="playerUrl(pl)"></a>
+                        <button @click="copy(playerUrl(pl))">Copy link</button>
+                    </div>
+
+                    <div class="player-config">
+                        <label class="field">
+                            <span>Attached projects</span>
+                            <div class="attach-list">
+                                <template x-for="p in projects" :key="p.id">
+                                    <label class="chk pill">
+                                        <input type="checkbox" :checked="isAttached(pl,p.id)" @change="toggleAttach(pl,p.id)">
+                                        <span x-text="p.name"></span>
+                                    </label>
+                                </template>
+                                <span class="muted" x-show="projects.length===0">Create a project first.</span>
+                            </div>
+                        </label>
+
+                        <label class="field">
+                            <span>Active source</span>
+                            <select @change="setActive(pl, $event.target.value)">
+                                <option value="" :selected="activeKey(pl)===''">— none —</option>
+                                <template x-for="opt in sourcesFor(pl)" :key="opt.key">
+                                    <option :value="opt.key" :selected="activeKey(pl)===opt.key" x-text="opt.label"></option>
+                                </template>
+                            </select>
+                        </label>
+
+                        <fieldset class="settings">
+                            <legend>Playback</legend>
+                            <label class="field inline">
+                                <span>Mode</span>
+                                <select x-model="pl.settings.playMode" @change="saveSettings(pl)">
+                                    <option value="diaporama">diaporama (auto)</option>
+                                    <option value="manual">manual (keypress)</option>
+                                </select>
+                            </label>
+                            <label class="field inline">
+                                <span>Image duration (s)</span>
+                                <input type="number" min="1" step="1" x-model.number="pl.settings.imageDuration" @change="saveSettings(pl)">
+                            </label>
+                            <label class="field inline">
+                                <span>Loop</span>
+                                <select x-model="pl.settings.loop" @change="saveSettings(pl)">
+                                    <option value="all">all media</option>
+                                    <option value="lastX">last X uploaded</option>
+                                </select>
+                            </label>
+                            <label class="field inline" x-show="pl.settings.loop==='lastX'">
+                                <span>X</span>
+                                <input type="number" min="1" step="1" x-model.number="pl.settings.lastX" @change="saveSettings(pl)">
+                            </label>
+                            <label class="chk">
+                                <input type="checkbox" x-model="pl.settings.prioritizeFresh" @change="saveSettings(pl)">
+                                prioritise fresh uploads
+                            </label>
+                        </fieldset>
+
+                        <fieldset class="settings">
+                            <legend>Surface / LED scaler</legend>
+                            <label class="field inline">
+                                <span>Container</span>
+                                <select x-model="pl.settings.scaler.container" @change="saveSettings(pl)">
+                                    <option value="full">full screen</option>
+                                    <option value="custom">custom resolution</option>
+                                </select>
+                            </label>
+                            <div class="row" x-show="pl.settings.scaler.container==='custom'">
+                                <label class="field inline"><span>W</span>
+                                    <input type="number" min="0" x-model.number="pl.settings.scaler.width" @change="saveSettings(pl)"></label>
+                                <label class="field inline"><span>H</span>
+                                    <input type="number" min="0" x-model.number="pl.settings.scaler.height" @change="saveSettings(pl)"></label>
+                            </div>
+                            <label class="field inline">
+                                <span>Fit</span>
+                                <select x-model="pl.settings.scaler.fit" @change="saveSettings(pl)">
+                                    <option value="contain">contain</option>
+                                    <option value="cover">cover</option>
+                                </select>
+                            </label>
+                            <div class="row">
+                                <label class="field inline"><span>H pos</span>
+                                    <select x-model="pl.settings.scaler.hPosition" @change="saveSettings(pl)">
+                                        <option value="center">center</option><option value="left">left</option>
+                                        <option value="right">right</option><option value="custom">custom</option>
+                                    </select></label>
+                                <label class="field inline" x-show="pl.settings.scaler.hPosition==='custom'"><span>dx</span>
+                                    <input type="number" x-model.number="pl.settings.scaler.hOffset" @change="saveSettings(pl)"></label>
+                            </div>
+                            <div class="row">
+                                <label class="field inline"><span>V pos</span>
+                                    <select x-model="pl.settings.scaler.vPosition" @change="saveSettings(pl)">
+                                        <option value="center">center</option><option value="top">top</option>
+                                        <option value="bottom">bottom</option><option value="custom">custom</option>
+                                    </select></label>
+                                <label class="field inline" x-show="pl.settings.scaler.vPosition==='custom'"><span>dy</span>
+                                    <input type="number" x-model.number="pl.settings.scaler.vOffset" @change="saveSettings(pl)"></label>
+                            </div>
+                            <label class="field inline">
+                                <span>Rotation</span>
+                                <select x-model.number="pl.settings.scaler.rotation" @change="saveSettings(pl)">
+                                    <option :value="0">0°</option><option :value="90">90°</option>
+                                    <option :value="180">180°</option><option :value="270">270°</option>
+                                </select>
+                            </label>
+                            <label class="chk">
+                                <input type="checkbox" x-model="pl.settings.scaler.evenLineSuppression" @change="saveSettings(pl)">
+                                even-line suppression (semi-transparent LED)
+                            </label>
+                        </fieldset>
+                    </div>
+                </div>
+            </section>
+        </template>
+        <p class="muted" x-show="players.length===0">No players yet.</p>
+    </main>
+
+    <!-- ===================== FILE BROWSER ===================== -->
+    <div class="modal" x-show="browser.open" x-cloak @keydown.escape.window="closeBrowser()">
+        <div class="modal-box">
+            <div class="modal-head">
+                <h3><span x-text="browser.project && browser.project.name"></span> /
+                    <span x-text="browser.source && browser.source.name"></span></h3>
+                <div class="browser-tools">
+                    <select x-model="browser.sort" @change="changeSort()">
+                        <option value="date">upload date</option>
+                        <option value="name">name</option>
+                        <option value="size">size</option>
+                    </select>
+                    <select x-model="browser.dir" @change="changeSort()">
+                        <option value="asc">asc</option>
+                        <option value="desc">desc</option>
+                    </select>
+                    <button @click="bulk('archive')" :disabled="selectedCount()===0">Archive (<span x-text="selectedCount()"></span>)</button>
+                    <button class="danger" @click="bulk('delete')" :disabled="selectedCount()===0">Delete</button>
+                    <button @click="closeBrowser()">Close</button>
+                </div>
+            </div>
+            <div class="grid">
+                <template x-for="f in browser.files" :key="f.name">
+                    <div class="tile" :class="{sel: browser.selected[f.name]}" @click="toggleSel(f.name)">
+                        <img :src="f.thumb" loading="lazy" alt="">
+                        <span class="vbadge" x-show="f.type==='video'">▶</span>
+                        <div class="meta">
+                            <span x-text="fmtSize(f.size)"></span>
+                            <span x-text="fmtDate(f.mtime)"></span>
+                        </div>
+                    </div>
+                </template>
+                <p class="muted" x-show="browser.files.length===0">Empty.</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+</body>
+</html>

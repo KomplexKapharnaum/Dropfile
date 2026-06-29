@@ -1,0 +1,10 @@
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+#stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; }
+#surface { image-rendering: pixelated; background: #000; }
+.overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+#status { color: #667; font: 14px system-ui, sans-serif; background: rgba(0,0,0,.4); padding: 8px 14px; border-radius: 8px; }
+.counter {
+    position: fixed; bottom: 10px; right: 14px; color: rgba(255,255,255,.55);
+    font: 13px system-ui, sans-serif; pointer-events: none; text-shadow: 0 1px 2px #000;
+}
+.counter.fresh { color: #ffd700; }

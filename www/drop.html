@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dropfile · Drop</title>
+    <link rel="stylesheet" href="/drop.css">
+    <link href="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone.css" rel="stylesheet" type="text/css" />
+    <script src="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone-min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="titles">
+            <h1 id="sourceName">Drop</h1>
+            <p id="projectName" class="muted"></p>
+        </div>
+        <button id="shareBtn" title="Share">⤴ Share</button>
+    </header>
+
+    <section class="nickrow">
+        <label>Your name
+            <input id="nick" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off">
+        </label>
+    </section>
+
+    <div id="dz" class="dropzone"></div>
+
+    <section id="mine">
+        <h2>Your uploads <span id="mineHint" class="muted"></span></h2>
+        <div id="mineGrid" class="grid"></div>
+    </section>
+
+    <div id="shareModal" class="modal hidden">
+        <div class="modal-box">
+            <canvas id="qr"></canvas>
+            <p id="shareUrl" class="muted"></p>
+            <div class="row">
+                <button id="copyBtn">Copy link</button>
+                <button id="closeShare">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/drop.js"></script>
+</body>
+</html>
