@@ -27,7 +27,8 @@ const ICONS = {
     down: '<path d="M6 9l6 6 6-6"/>',
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
     plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
-    archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>'
+    archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>',
+    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>'
 };
 
 function adminApp() {
@@ -39,18 +40,21 @@ function adminApp() {
         newProjectName: '',
         newPlayerName: '',
         toast: '',
-        // per-scene UI state (keyed by scene/source id)
+        // per-scene UI state (keyed by scene id)
         expanded: {},
         files: {},
         sel: {},
         uploading: {},
         uploadTarget: null,
+        // drag state
+        drag: { sid: null, from: -1, name: null },         // media tiles
+        sceneDrag: { pid: null, from: -1, sid: null },      // scenes
         // overlays
         lightbox: { open: false, files: [], index: 0 },
         qr: { open: false, url: '', title: '' },
-        drag: { sid: null, from: -1 },
 
         icon(name) { return svgIcon(ICONS[name] || ''); },
+        pad(n) { return String(n).padStart(2, '0'); },
 
         async init() {
             try {
@@ -87,6 +91,8 @@ function adminApp() {
             if (!confirm('Delete project "' + p.name + '"? Media files stay on disk.')) return;
             this.guard(async () => { await api('DELETE', '/projects/' + p.id); await this.loadAll(); });
         },
+        // clicking a project header collapses all its scenes
+        collapseScenes(p) { for (const s of p.sources) this.expanded[s.id] = false; },
 
         // ---- scenes ----
         addScene(p) {
@@ -107,7 +113,6 @@ function adminApp() {
             this.guard(async () => {
                 const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { public: !s.public });
                 this.replaceProject(r.project);
-                this.notify(s.public ? 'Scene is now public' : 'Scene is now private');
             });
         },
         toggleSelfDelete(p, s) {
@@ -127,9 +132,28 @@ function adminApp() {
         replaceProject(project) {
             const i = this.projects.findIndex(x => x.id === project.id);
             if (i >= 0) this.projects.splice(i, 1, project); else this.projects.push(project);
-            // keep player attach views in sync (names may matter)
             this.loadPlayers();
         },
+
+        // ---- scene drag reorder (handle = index chip) ----
+        sceneDragStart(p, i, ev) {
+            this.sceneDrag = { pid: p.id, from: i, sid: p.sources[i].id };
+            if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
+        },
+        sceneDragOver(p, i) {
+            if (this.sceneDrag.pid !== p.id || this.sceneDrag.from === i || i < 0) return;
+            const cont = document.querySelector(`[data-scenes="${p.id}"]`);
+            this.flipReorder(cont, p.sources, this.sceneDrag.from, i, 'sid');
+            this.sceneDrag.from = i;
+        },
+        sceneDragEnd(p) {
+            if (this.sceneDrag.pid === p.id) {
+                const order = p.sources.map(s => s.id);
+                this.guard(async () => { await api('PUT', `/projects/${p.id}/scene-order`, { order }); });
+            }
+            this.sceneDrag = { pid: null, from: -1, sid: null };
+        },
+        isSceneDragging(p, s) { return this.sceneDrag.pid === p.id && this.sceneDrag.sid === s.id; },
 
         // ---- scene media (inline grid) ----
         toggleExpand(p, s) {
@@ -161,11 +185,18 @@ function adminApp() {
                 .finally(() => { this.uploading[s.id] = false; input.value = ''; });
         },
 
-        // ---- selection + bulk ----
-        toggleSel(s, name, ev) { if (ev) ev.stopPropagation(); this.sel[s.id] = this.sel[s.id] || {}; this.sel[s.id][name] = !this.sel[s.id][name]; },
+        // ---- selection (per scene) + bulk ----
+        toggleSel(s, name) { this.sel[s.id] = this.sel[s.id] || {}; this.sel[s.id][name] = !this.sel[s.id][name]; },
         isSel(s, name) { return !!(this.sel[s.id] && this.sel[s.id][name]); },
         selNames(s) { const m = this.sel[s.id] || {}; return Object.keys(m).filter(n => m[n]); },
         selCount(s) { return this.selNames(s).length; },
+        // selection-mode: once something is selected, a plain click toggles
+        // selection; otherwise it opens the preview.
+        tileClick(s, idx) {
+            const f = this.filesOf(s)[idx]; if (!f) return;
+            if (this.selCount(s) > 0) this.toggleSel(s, f.name);
+            else this.openLightbox(s, idx);
+        },
         bulk(op, p, s) {
             const names = this.selNames(s); if (!names.length) return;
             if (op === 'delete' && !confirm('Permanently delete ' + names.length + ' file(s)?')) return;
@@ -176,15 +207,52 @@ function adminApp() {
             });
         },
 
-        // ---- drag reorder ----
-        dragStart(s, i) { this.drag = { sid: s.id, from: i }; },
-        dropOn(p, s, i) {
-            if (this.drag.sid !== s.id || this.drag.from < 0) return;
-            const arr = this.files[s.id];
-            const [m] = arr.splice(this.drag.from, 1);
-            arr.splice(i, 0, m);
-            this.drag = { sid: null, from: -1 };
-            this.guard(async () => { await api('PUT', `/projects/${p.id}/sources/${s.id}/order`, { order: arr.map(f => f.name) }); });
+        // ---- media tile drag reorder (FLIP animated) ----
+        mediaDragStart(s, i, ev) {
+            this.drag = { sid: s.id, from: i, name: this.filesOf(s)[i].name };
+            if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
+        },
+        mediaDragOver(s, i) {
+            if (this.drag.sid !== s.id || this.drag.from === i || i < 0) return;
+            const grid = document.querySelector(`[data-grid="${s.id}"]`);
+            this.flipReorder(grid, this.files[s.id], this.drag.from, i, 'name');
+            this.drag.from = i;
+        },
+        mediaDragEnd(p, s) {
+            if (this.drag.sid === s.id) {
+                const order = this.files[s.id].map(f => f.name);
+                this.guard(async () => { await api('PUT', `/projects/${p.id}/sources/${s.id}/order`, { order }); });
+            }
+            this.drag = { sid: null, from: -1, name: null };
+        },
+        isDragging(s, f) { return this.drag.sid === s.id && this.drag.name === f.name; },
+
+        // FLIP: animate siblings to their new positions after an in-place move.
+        flipReorder(container, arr, from, to, key) {
+            if (!container) { const [m] = arr.splice(from, 1); arr.splice(to, 0, m); return; }
+            const before = new Map();
+            for (const c of container.children) {
+                const k = c.getAttribute('data-' + key);
+                if (k != null) before.set(k, c.getBoundingClientRect());
+            }
+            const [m] = arr.splice(from, 1); arr.splice(to, 0, m);
+            this.$nextTick(() => {
+                for (const c of container.children) {
+                    const k = c.getAttribute('data-' + key);
+                    const f = k != null && before.get(k);
+                    if (!f) continue;
+                    const l = c.getBoundingClientRect();
+                    const dx = f.left - l.left, dy = f.top - l.top;
+                    if (dx || dy) {
+                        c.style.transition = 'none';
+                        c.style.transform = `translate(${dx}px,${dy}px)`;
+                        requestAnimationFrame(() => {
+                            c.style.transition = 'transform 170ms ease';
+                            c.style.transform = '';
+                        });
+                    }
+                }
+            });
         },
 
         // ---- lightbox ----

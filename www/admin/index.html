@@ -35,43 +35,45 @@
 
         <template x-for="p in projects" :key="p.id">
             <section class="card">
-                <div class="card-head">
+                <div class="card-head clickable" @click="collapseScenes(p)" title="Click to collapse all scenes">
                     <div class="title-wrap">
                         <h2 x-text="p.name"></h2>
-                        <button class="iconbtn" title="Rename" @click="renameProject(p)" x-html="icon('pencil')"></button>
+                        <button class="iconbtn" title="Rename" @click.stop="renameProject(p)" x-html="icon('pencil')"></button>
                     </div>
                     <div class="actions">
-                        <button @click="addScene(p)"><span x-html="icon('plus')"></span> Scene</button>
-                        <button class="iconbtn danger" title="Delete project" @click="deleteProject(p)" x-html="icon('trash')"></button>
+                        <button @click.stop="addScene(p)"><span x-html="icon('plus')"></span> Scene</button>
+                        <button class="iconbtn danger" title="Delete project" @click.stop="deleteProject(p)" x-html="icon('trash')"></button>
                     </div>
                 </div>
 
-                <div class="scenes">
-                    <template x-for="s in p.sources" :key="s.id">
-                        <div class="scene">
-                            <div class="scene-head">
-                                <button class="iconbtn chev" :class="{open: expanded[s.id]}" @click="toggleExpand(p,s)" x-html="icon('down')"></button>
-                                <strong class="scene-name" x-text="s.name" @click="toggleExpand(p,s)"></strong>
-                                <button class="iconbtn" title="Rename scene" @click="renameScene(p,s)" x-html="icon('pencil')"></button>
+                <div class="scenes" :data-scenes="p.id">
+                    <template x-for="(s, idx) in p.sources" :key="s.id">
+                        <div class="scene" :class="{dragging: isSceneDragging(p,s)}" :data-sid="s.id"
+                             @dragover.prevent="sceneDragOver(p,idx)" @drop.prevent>
+                            <div class="scene-head" @click="toggleExpand(p,s)">
+                                <span class="sidx" draggable="true" title="Drag to reorder scenes"
+                                      @click.stop @dragstart="sceneDragStart(p,idx,$event)" @dragend="sceneDragEnd(p)"
+                                      x-text="pad(idx+1)"></span>
+                                <strong class="scene-name" x-text="s.name"></strong>
+                                <button class="iconbtn" title="Rename scene" @click.stop="renameScene(p,s)" x-html="icon('pencil')"></button>
+                                <span class="spacer"></span>
+                                <span class="count" x-text="s.count + (s.count===1 ? ' file' : ' files')"></span>
+                                <button class="iconbtn chev" :class="{open: expanded[s.id]}" x-html="icon('down')"></button>
+                                <button class="iconbtn danger" title="Delete scene" @click.stop="deleteScene(p,s)" x-html="icon('trash')"></button>
+                            </div>
 
-                                <label class="switch" :title="s.public ? 'Public — has a drop URL' : 'Private — admin only'">
+                            <div class="scene-row2">
+                                <label class="switch c-toggle" @click.stop :title="s.public ? 'Public — has a drop URL' : 'Private — admin only'">
                                     <input type="checkbox" :checked="s.public" @change="toggleScenePublic(p,s)">
                                     <span class="slider"></span>
                                     <span class="switch-label" x-text="s.public ? 'public' : 'private'"></span>
                                 </label>
-
-                                <span class="count" x-text="s.count + (s.count===1 ? ' file' : ' files')"></span>
-                                <span class="spacer"></span>
-                                <button class="iconbtn danger" title="Delete scene" @click="deleteScene(p,s)" x-html="icon('trash')"></button>
-                            </div>
-
-                            <div class="scene-share" x-show="s.public" x-cloak>
-                                <a :href="dropUrl(s)" target="_blank" class="url" x-text="dropUrl(s)"></a>
-                                <button class="iconbtn" title="Copy link" @click="copy(dropUrl(s))" x-html="icon('copy')"></button>
-                                <button class="iconbtn" title="Show QR" @click="openQr(dropUrl(s), p.name + ' / ' + s.name)" x-html="icon('qr')"></button>
-                                <label class="chk small">
+                                <a class="url c-url" x-show="s.public" :href="dropUrl(s)" target="_blank" @click.stop x-text="dropUrl(s)"></a>
+                                <button class="iconbtn c-copy" x-show="s.public" title="Copy link" @click.stop="copy(dropUrl(s))" x-html="icon('copy')"></button>
+                                <button class="iconbtn c-qr" x-show="s.public" title="Show QR" @click.stop="openQr(dropUrl(s), p.name + ' / ' + s.name)" x-html="icon('qr')"></button>
+                                <label class="chk small c-chk" x-show="s.public" @click.stop>
                                     <input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(p,s)">
-                                    uploaders can delete own
+                                    uploaders delete own
                                 </label>
                             </div>
 
@@ -89,14 +91,16 @@
                                     </template>
                                 </div>
 
-                                <p class="muted hint" x-show="(files[s.id]||[]).length">Drag thumbnails to reorder · click to preview</p>
+                                <p class="muted hint" x-show="(files[s.id]||[]).length"
+                                   x-text="selCount(s) > 0 ? 'Click thumbnails to select · drag to reorder' : 'Click to preview · drag to reorder'"></p>
 
-                                <div class="grid">
+                                <div class="grid" :data-grid="s.id">
                                     <template x-for="(f, idx) in filesOf(s)" :key="f.name">
-                                        <div class="tile" :class="{sel: isSel(s,f.name)}"
-                                             draggable="true"
-                                             @dragstart="dragStart(s,idx)" @dragover.prevent @drop.prevent="dropOn(p,s,idx)"
-                                             @click="openLightbox(s,idx)">
+                                        <div class="tile" :class="{sel: isSel(s,f.name), dragging: isDragging(s,f)}"
+                                             :data-name="f.name" draggable="true"
+                                             @dragstart="mediaDragStart(s,idx,$event)" @dragover.prevent="mediaDragOver(s,idx)"
+                                             @drop.prevent @dragend="mediaDragEnd(p,s)"
+                                             @click="tileClick(s,idx)">
                                             <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
                                             <img :src="f.thumb" loading="lazy" alt="">
                                             <span class="vbadge" x-show="f.type==='video'">▶</span>

@@ -61,10 +61,21 @@ module.exports = function (ctx) {
         };
     }
 
+    // scenes in their explicit project order (unknown ones appended)
+    function orderedScenes(p) {
+        const all = p.sources || {};
+        const order = Array.isArray(p.sceneOrder) ? p.sceneOrder : [];
+        const seen = new Set();
+        const out = [];
+        for (const sid of order) { if (all[sid]) { out.push(all[sid]); seen.add(sid); } }
+        for (const s of Object.values(all)) { if (!seen.has(s.id)) out.push(s); }
+        return out;
+    }
+
     function serializeProject(p) {
         return {
             id: p.id, name: p.name, slug: p.slug, createdAt: p.createdAt,
-            sources: Object.values(p.sources || {}).map(s => serializeScene(p, s)),
+            sources: orderedScenes(p).map(s => serializeScene(p, s)),
             players: model.projectPlayers(p.id).map(pl => ({ id: pl.id, name: pl.name }))
         };
     }
@@ -184,7 +195,7 @@ module.exports = function (ctx) {
         if (!name) return res.status(400).json({ error: 'name required' });
         const slug = ids.uniqueSlug(ids.slugify(name), Object.values(store.data.projects).map(p => p.slug));
         const id = ids.id();
-        store.data.projects[id] = { id, name, slug, createdAt: Date.now(), sources: {} };
+        store.data.projects[id] = { id, name, slug, createdAt: Date.now(), sources: {}, sceneOrder: [] };
         try { fs.mkdirSync(path.join(UPLOAD_PATH, slug), { recursive: true }); } catch (e) {}
         store.save();
         res.json({ project: serializeProject(store.data.projects[id]) });
@@ -230,7 +241,21 @@ module.exports = function (ctx) {
             order: [],
             createdAt: Date.now()
         };
+        p.sceneOrder = p.sceneOrder || [];
+        p.sceneOrder.push(sid);
         try { fs.mkdirSync(path.join(UPLOAD_PATH, p.slug, folder), { recursive: true }); } catch (e) {}
+        store.save();
+        res.json({ project: serializeProject(p) });
+    });
+
+    // reorder scenes within a project (drives the 01- index prefix)
+    api.put('/projects/:id/scene-order', (req, res) => {
+        const p = store.data.projects[req.params.id];
+        if (!p) return res.status(404).json({ error: 'not found' });
+        const valid = new Set(Object.keys(p.sources || {}));
+        const order = (Array.isArray(req.body.order) ? req.body.order : []).filter(id => valid.has(id));
+        for (const id of valid) if (!order.includes(id)) order.push(id);
+        p.sceneOrder = order;
         store.save();
         res.json({ project: serializeProject(p) });
     });
@@ -253,6 +278,7 @@ module.exports = function (ctx) {
         }
         delete p.sources[sid];
         delete store.data.uploads[sid];
+        p.sceneOrder = (p.sceneOrder || []).filter(x => x !== sid);
         store.save();
         res.json({ project: serializeProject(p) });
     });
