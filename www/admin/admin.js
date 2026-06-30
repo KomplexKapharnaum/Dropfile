@@ -81,6 +81,7 @@ function adminApp() {
         ],
         socket: null, status: {}, autoScroll: true, autoplayOpts: {}, crOpen: {},
         stationMidiMedia: {},   // station id -> active scene files (station modal, local MIDI)
+        mediaTimers: {},        // scene id -> debounce timer for live media refresh
 
         icon(name) { return svgIcon(ICONS[name] || ''); },
         pad(n) { return String(n).padStart(2, '0'); },
@@ -99,7 +100,29 @@ function adminApp() {
                 this.socket.on('connect', () => this.socket.emit('admin-join'));
                 this.socket.on('status-snapshot', (snap) => { this.status = Object.assign({}, snap || {}); });
                 this.socket.on('player-status', (m) => { if (m && m.machineId) { this.status[m.machineId] = m.status; this.maybeScroll(m.machineId); } });
+                this.socket.on('scene-media', (m) => this.onSceneMedia(m));
             }
+        },
+        // a drop/upload changed a scene's media -> live-refresh the scene grid + per-station
+        // clip grids (both read this.files[sceneId]) and the media counts. Debounced per
+        // scene so a burst of audience uploads coalesces into one refetch.
+        onSceneMedia(m) {
+            const sceneId = m && m.sceneId; if (!sceneId) return;
+            clearTimeout(this.mediaTimers[sceneId]);
+            this.mediaTimers[sceneId] = setTimeout(async () => {
+                const p = this.projects.find(x => (x.sources || []).some(s => s.id === sceneId));
+                const s = p && p.sources.find(x => x.id === sceneId);
+                if (p && s && this.files[sceneId] !== undefined) await this.refreshSceneFiles(p, s);
+                await this.loadProjects();   // media counts on scene cards
+            }, 350);
+        },
+        // refetch a scene's files, keeping any current bulk-selection on files that remain
+        async refreshSceneFiles(p, s) {
+            try {
+                const r = await api('GET', `/projects/${p.id}/sources/${s.id}/files`);
+                this.files[s.id] = r.files;
+                if (this.sel[s.id]) { const present = new Set(r.files.map(f => f.name)); for (const k of Object.keys(this.sel[s.id])) if (!present.has(k)) delete this.sel[s.id][k]; }
+            } catch (e) { /* ignore transient */ }
         },
         notify(m) { this.toast = m; setTimeout(() => { if (this.toast === m) this.toast = ''; }, 2000); },
         async guard(fn) { try { await fn(); } catch (e) { this.notify('Error: ' + e.message); } },

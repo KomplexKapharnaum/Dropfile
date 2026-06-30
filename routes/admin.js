@@ -46,7 +46,10 @@ module.exports = function (ctx) {
             selectedName: m.selectedName || null
         });
     }
-    function refreshSceneMachines(sceneId) { for (const m of model.machinesForScene(sceneId)) broadcastActive(m); }
+    function refreshSceneMachines(sceneId) {
+        for (const m of model.machinesForScene(sceneId)) broadcastActive(m);
+        io.to('admins').emit('scene-media', { sceneId });   // refresh open admin scene/clip grids
+    }
 
     // ---- scene helpers (unchanged model) -----------------------------------
     function sceneCount(p, s) {

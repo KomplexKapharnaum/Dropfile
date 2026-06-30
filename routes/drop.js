@@ -83,6 +83,7 @@ module.exports = function (ctx) {
                 io.to('player:' + p.token).emit('new-media', payload);
             }
         }
+        io.to('admins').emit('scene-media', { sceneId: sid });   // live-refresh admin scene/clip grids
         res.json({ ok: true, fileId });
     });
 
@@ -107,6 +108,7 @@ module.exports = function (ctx) {
         // push to any player currently displaying this source (fresh-queue)
         const payload = { name: filename, type: 'text', url: model.mediaUrl(req.dropProject, req.dropSource, filename) };
         for (const p of model.machinesForScene(sid)) io.to('player:' + p.token).emit('new-media', payload);
+        io.to('admins').emit('scene-media', { sceneId: sid });   // live-refresh admin scene/clip grids
         res.json({ ok: true, fileId });
     });
 
