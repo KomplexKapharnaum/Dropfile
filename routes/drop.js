@@ -139,6 +139,7 @@ module.exports = function (ctx) {
         try { fs.unlinkSync(path.join(req.dropDir, entry.filename)); } catch (e) {}
         delete manifest[req.params.fileId];
         store.save();
+        io.to('admins').emit('scene-media', { sceneId: req.dropSource.id });   // live-remove from admin grids
         res.json({ ok: true });
     });
 
