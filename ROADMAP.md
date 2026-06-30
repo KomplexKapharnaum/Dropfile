@@ -2,6 +2,17 @@
 
 Turns Dropfile from a file-drop tool into a media controller: a **pool of Players** (display surfaces) fed by **Sources** grouped into **Projects**.
 
+## Status (implemented on `media-controller`, deployed at drop.kxkm.net)
+
+- **Phase 1 — core** ✅ projects, players pool, scenes (public/private), integrated browser (thumbnails, ordering, bulk delete/archive), blind drop, LED scaler (exact-pixel custom resolution, even-line = vertical-50 % squash, position/fit/rotation), live settings, restart-resume.
+- **Phase 2 — camera takeover** ✅ *code* — `stream` is a scene accept-type; *Go live* on the drop page; mesh WebRTC (streamers offer, players answer); player renders single/grid; live takes over & reverts; active-stream audio. **Needs coturn reachable** — verify at `/diag` (as of last test `turn.kxkm.net` was unreachable on 3478/5349 from outside the LAN).
+- **Phase 3 — MIDI** ✅ player `playMode: midi` (trigger surface); learn on the player (`m`) and in the admin; map note/CC → media / transport / blackout; admin "drive from my controller".
+- **Extras** ✅ text drop (`.txt`), admin playback remote, `/diag` WebRTC tester.
+
+A few names shifted from the original plan below: *sources* are called **scenes**;
+camera takeover is the scene accept-type **`stream`** (not a separate `/cam` URL);
+MIDI is **`playMode: midi`** (not a `sourceMode`).
+
 ## Context — why this change
 
 Today Dropfile (`server.js`, ~200 lines) is a single-purpose drop tool: filesystem-only storage (projects = directories under `UPLOAD_PATH`), multer uploads named `{nick}_{ts}_{last10}`, a real-time "fresh-queue" diaporama (`www/diaporama.js`), and admin delegated to an external **Filebrowser** child process proxied at `/admin`. No auth, no QR, no concept of display hardware.
@@ -187,6 +198,10 @@ Scan `UPLOAD_PATH`; for each existing valid top-level dir create a project with 
 
 `/p/:playerToken/cam` phone sender; Socket.IO signaling (`cam-offer`/`cam-answer`/`cam-ice` in the player room); ICE servers built by `lib/turn.js` from `.env` (coturn `use-auth-secret` → short-lived HMAC creds, no static password shipped to clients); front/back switch; player `sourceMode: camera` with takeover/release. **README** documents coturn install + config (public box, ports 3478/5349 + relay range, realm, `static-auth-secret`, `external-ip`) — see `extra/turnserver.conf`.
 
+**Built as:** camera takeover is a scene accept-type **`stream`** (4th alongside image/video/text) with a per-scene **single / grid** mode, not a separate `/cam` URL. The streamer joins the scene's room (`stream-join` by `dropToken`); players join by `playerToken`; mesh signaling uses `rtc-offer`/`rtc-answer`/`rtc-ice`. The player renders incoming streams on its canvas compositor (single = newest fills container; grid = tiled), **takes over** the folder diaporama while anyone is live and **reverts** when all stop; audio plays from the **active (newest)** stream only. `www/camera.js` = sender, `www/receiver.js` = player. `/diag` (+ `/api/ice`) is a single-device Trickle-ICE tester for coturn.
+
 ## Phase 3 — MIDI source
 
 Web MIDI on the player; **learn mode** (incoming note/CC → media index) stored per player; manual selection via controller (e.g. Korg nanoKONTROL). `sourceMode: midi` over a folder source.
+
+**Built as:** a player **`playMode: midi`** (trigger surface — holds the triggered clip, no auto-advance). A shared `www/midi.js` runs on **both** the player and the admin (Web MIDI). Mappings (`settings.midi.map`, key `note:ch:d1` / `cc:ch:d1`) bind to one of: **select a media**, **transport** (next/prev/play/pause/restart/reload), or **blackout** (toggled in the canvas compositor). Learn happens on the player screen (press `m`) or in the admin's per-player MIDI panel; the admin also has a **"drive from my controller"** toggle that dispatches mapped pad presses to the player via the command channel. Map persists via `PUT /admin/api/players/:id/midi` (admin) and `PUT /api/player/:token/midi` (player), kept separate from the general settings PUT so neither clobbers the other.

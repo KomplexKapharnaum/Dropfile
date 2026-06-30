@@ -15,11 +15,19 @@ Dropfile turns drop-folders and displays into a small **media controller**:
   - **private** — no public URL; admin-managed only.
   - Either way the admin can add media and **reorder** it (drag); the chosen
     order drives playback. New uploads append in upload-time order.
+- **Content types** — each public scene picks what it accepts: **images**,
+  **videos**, **text** (saved as `.txt`), and/or a live **camera stream**. The
+  drop page adapts: a restricted upload field, a text box, and/or a big *Go live*
+  button.
+- **Player modes** — *diaporama* (auto-advance), *manual* (keypress), or *MIDI*
+  (a controller triggers clips — a hold/trigger surface). A live **camera
+  takeover** overrides the playlist while anyone streams and reverts when they
+  stop. Admins also have a live playback remote (prev/next/play-pause/restart).
 
 Admin changes are pushed live to every open player over WebSocket.
 
-See [ROADMAP.md](ROADMAP.md) for the full design and the Phase 2/3 plan
-(WebRTC camera takeover, MIDI source).
+See [ROADMAP.md](ROADMAP.md) for the full design. Phases 1–3 (core, WebRTC
+camera takeover, MIDI source) are implemented.
 
 ## Requirements
 
@@ -84,13 +92,26 @@ lib/model.js         # queries over the store (find by token, source dirs, …)
 lib/playlist.js      # resolve a player's active source -> media playlist
 lib/thumbs.js        # sharp (images) + ffmpeg (video posters) thumbnail cache
 lib/auth.js          # HTTP Basic middleware (ADMIN_PASSWORD)
-lib/migrate.js       # one-time import of existing folders
-routes/drop.js       # /d, /api/drop/*
-routes/player.js     # /p, /api/player/*
+lib/turn.js          # WebRTC ICE: short-lived coturn credentials (TURN REST)
+lib/migrate.js       # import legacy folders + idempotent store upgrades
+routes/drop.js       # /d, /api/drop/* (upload, text, blind "my uploads")
+routes/player.js     # /p, /api/player/*, /diag, /api/ice
 routes/admin.js      # /admin/api/* (+ static admin SPA), behind auth
-sockets/index.js     # player rooms; settings/active/new-media broadcast
-www/                 # admin SPA (Alpine.js), drop page, player canvas engine
+sockets/index.js     # player rooms + WebRTC stream signaling (offer/answer/ice)
+www/                 # admin SPA (Alpine), drop, player (canvas engine),
+                     #   camera.js (sender), receiver.js (player), midi.js, diag.html
 ```
+
+## Live control & diagnostics
+
+- **Playback remote** (admin player card): prev / next / play-pause / restart /
+  reload, pushed live over WebSocket.
+- **MIDI** (player `m` overlay, or the admin MIDI panel): learn a pad/CC → select
+  a clip, transport, or blackout. Map persists per player; an admin "drive from
+  my controller" toggle lets a console controller drive any player. Web MIDI needs
+  a secure context (HTTPS / localhost).
+- **WebRTC diagnostic** — `/admin` → *WebRTC ↗*, or `/diag` directly. Click *Run
+  test*: **relay** candidates mean TURN works.
 
 ## Phase 2 — WebRTC camera takeover (coturn)
 
@@ -120,3 +141,17 @@ TURN_TTL    = 43200                                # optional, seconds (12h)
 `lib/turn.js` signs **short-lived** credentials with `TURN_SECRET` (no static
 password is shipped to clients); the player API advertises the resulting ICE
 servers automatically.
+
+**Verify** at `/diag` (also linked from the admin) — click *Run test*:
+
+- **relay** candidates → TURN works; cross-network streaming will connect.
+- **srflx** only → STUN works but no relay; check `TURN_SECRET` == coturn's
+  `static-auth-secret`, `external-ip`, and that **3478 + 5349 (tcp/udp)** and the
+  relay range are open on the public box.
+- nothing → coturn unreachable / not running.
+
+Run `/diag` from a phone on **mobile data** for a true test. The TURN host must be
+reachable from the **public internet**, not just the LAN — an internal machine
+hitting the public IP can fail on hairpin NAT and is *not* a valid test (e.g.
+`nc -uvz turn.host 3478` from inside the LAN may time out even when coturn is
+fine for outside clients).
