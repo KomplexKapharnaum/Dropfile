@@ -121,16 +121,18 @@
     }
 
     function start() {
+        if (streaming) return;          // a live stream owns the canvas — don't run the playlist under it
         clearTimers();
         paused = false;
         playingFresh = false;
         index = 0;
-        if (!queue.length && !fresh.length) { setStatus('No media'); clearCanvas(); emitStatus(); return; }
+        if (!queue.length && !fresh.length) { current = null; setStatus(active ? 'No media in this scene' : 'No source selected'); clearCanvas(); emitStatus(); return; }
         setStatus('');
         next(true);
     }
 
     function next(fromStart) {
+        if (streaming) return;
         clearTimers();
         if (settings.prioritizeFresh && fresh.length) { playingFresh = true; show(fresh.shift()); return; }
         if (playingFresh) playingFresh = false;
@@ -145,7 +147,7 @@
     }
 
     function prev() {
-        if (playingFresh) return;
+        if (streaming || playingFresh) return;
         clearTimers();
         index = Math.max(0, index - 1);
         show(queue[index]);
@@ -295,6 +297,7 @@
     }
 
     function show(item) {
+        if (streaming) return;          // never draw/play playlist media while a stream is live
         current = item;
         setStatus('');
         updateCounter();
@@ -324,12 +327,12 @@
     }
 
     function scheduleNext() {
-        if (paused) return;
+        if (paused || streaming) return;
         if (settings.playMode === 'diaporama') timer = setTimeout(next, Math.max(1, settings.imageDuration) * 1000);
     }
     function clearTimers() { if (timer) { clearTimeout(timer); timer = null; } }
     function stopRaf() { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
-    function startRaf() { stopRaf(); const loop = () => { redraw(); rafId = requestAnimationFrame(loop); }; loop(); }
+    function startRaf() { if (streaming) return; stopRaf(); const loop = () => { redraw(); rafId = requestAnimationFrame(loop); }; loop(); }
 
     // ---- compositor ----
     function container() {
@@ -481,6 +484,7 @@
         if (has && !streaming) {
             streaming = true;
             clearTimers(); stopRaf();
+            try { video.pause(); } catch (e) {}    // freeze any background video so it can't draw/sound under the stream
             startStreamRaf();
             setStatus('');
         } else if (!has && streaming) {
