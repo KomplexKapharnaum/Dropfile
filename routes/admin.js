@@ -311,8 +311,8 @@ module.exports = function (ctx) {
     api.get('/projects/:id/sources/:sid/files', resolveSource, (req, res) => {
         const files = orderMedia(listMedia(req._dir), req._source.order).map(m => ({
             name: m.name, type: m.type, size: m.size, mtime: m.mtime,
-            url: model.mediaUrl(req._project, req._source, m.name),
-            thumb: `/admin/api/thumb?project=${req._project.id}&source=${req._source.id}&name=${encodeURIComponent(m.name)}`
+            url: model.mediaUrl(req._project, req._source, m.name) + '?v=' + model.mediaVersion(m),
+            thumb: `/admin/api/thumb?project=${req._project.id}&source=${req._source.id}&name=${encodeURIComponent(m.name)}&v=${model.mediaVersion(m)}`
         }));
         res.json({ files });
     });
@@ -475,5 +475,10 @@ module.exports = function (ctx) {
         res.json({ project: serializeProject(p) });
     });
 
-    return { api, page: express.static(path.join(__dirname, '..', 'www', 'admin')) };
+    // no-cache so the admin always loads the latest build (control-room code is
+    // front-end too; see app.js). Cheap 304s via ETag keep it fast.
+    const page = express.static(path.join(__dirname, '..', 'www', 'admin'), {
+        setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
+    });
+    return { api, page };
 };

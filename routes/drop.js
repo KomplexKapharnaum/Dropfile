@@ -36,8 +36,10 @@ module.exports = function (ctx) {
     });
     const upload = multer({ storage, limits: { fileSize: UPLOAD_SIZE * 1024 * 1024 } });
 
-    // drop page (blind box) — same HTML for every token
+    // drop page (blind box) — same HTML for every token.
+    // no-cache so audience devices always load the latest build (see app.js).
     router.get('/d/:token', (req, res) => {
+        res.set('Cache-Control', 'no-cache');
         res.sendFile(path.join(__dirname, '..', 'www', 'drop.html'));
     });
 

@@ -12,13 +12,16 @@ module.exports = function (ctx) {
     const router = express.Router();
     const { UPLOAD_PATH } = ctx;
 
-    // display page (same HTML for every token; token read from the URL client-side)
+    // display page (same HTML for every token; token read from the URL client-side).
+    // no-cache so a rebooted kiosk always loads the latest build (see app.js).
     router.get('/p/:token', (req, res) => {
+        res.set('Cache-Control', 'no-cache');
         res.sendFile(path.join(__dirname, '..', 'www', 'player.html'));
     });
 
     // WebRTC diagnostic page + the ICE servers it (and clients) use
     router.get('/diag', (req, res) => {
+        res.set('Cache-Control', 'no-cache');
         res.sendFile(path.join(__dirname, '..', 'www', 'diag.html'));
     });
     router.get('/api/ice', (req, res) => {
