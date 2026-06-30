@@ -75,6 +75,12 @@ button .ic, .btn .ic { width: 15px; height: 15px; }
 .cr-transport .iconbtn { padding: 6px; }
 .cr-transport .iconbtn.learned, .scene-btn.learned, .cr-clip.learned { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cr-scenes { display: flex; flex-direction: column; gap: 4px; }
+.cr-scene { display: flex; flex-direction: column; gap: 4px; }
+.cr-scene-row { display: flex; gap: 4px; align-items: stretch; }
+.cr-scene-row .scene-btn { flex: 1; }
+.scene-open { display: flex; align-items: center; }
+.scene-open .ic { transition: transform .15s; transform: rotate(-90deg); }
+.scene-open.open .ic { transform: rotate(0deg); }
 .scene-btn { position: relative; text-align: left; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
 .scene-btn:hover { border-color: var(--accent); }
 .scene-btn.active { background: var(--accent); border-color: var(--accent); color: #06122a; font-weight: 600; }

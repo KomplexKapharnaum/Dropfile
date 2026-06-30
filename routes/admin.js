@@ -41,7 +41,9 @@ module.exports = function (ctx) {
     function broadcastActive(m) {
         io.to('player:' + m.token).emit('active-change', {
             active: playlistLib.activeInfo(m),
-            media: playlistLib.playlist(UPLOAD_PATH, m)
+            media: playlistLib.playlist(UPLOAD_PATH, m),
+            playMode: m.playMode || 'diaporama',     // so the kiosk knows scene-loop vs held clip
+            selectedName: m.selectedName || null
         });
     }
     function refreshSceneMachines(sceneId) { for (const m of model.machinesForScene(sceneId)) broadcastActive(m); }
@@ -438,10 +440,14 @@ module.exports = function (ctx) {
             return res.json({ project: serializeProject(found.project) });
         }
         if (!(found.project.sources || {})[sceneId]) return res.status(400).json({ error: 'invalid scene' });
+        const name = String(req.body.name || '');
         m.activeProjectId = found.project.id;
         m.activeStationId = found.station.id;
         m.activeSceneId = sceneId;
-        m.selectedName = null;
+        // with a media name -> jump straight to that clip (manual, held + looped);
+        // without -> start the whole scene (diaporama loop).
+        if (name) { m.selectedName = name; m.playMode = 'manual'; }
+        else { m.selectedName = null; m.playMode = 'diaporama'; }
         store.save();
         broadcastSettings(m);    // surface may differ between stations
         broadcastActive(m);

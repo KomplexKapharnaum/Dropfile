@@ -199,23 +199,28 @@
                                 </div>
                                 <div class="cr-scenes">
                                     <template x-for="s in project().sources" :key="s.id">
-                                        <button class="scene-btn" :class="{active: isActiveScene(st, s), learned: consoleKey(st.id,{type:'scene',sceneId:s.id})}" @click="playScene(project(), st, s)">
-                                            <span x-show="isActiveScene(st, s)">▸ </span><span x-text="s.name"></span>
-                                            <span class="kbadge" x-show="consoleKey(st.id,{type:'scene',sceneId:s.id})" x-text="consoleKey(st.id,{type:'scene',sceneId:s.id})"></span>
-                                        </button>
+                                        <div class="cr-scene">
+                                            <div class="cr-scene-row">
+                                                <button class="scene-btn" :class="{active: isActiveScene(st, s), learned: consoleKey(st.id,{type:'scene',sceneId:s.id})}" @click="playScene(project(), st, s)" title="Play this scene (loop)">
+                                                    <span x-show="isActiveScene(st, s)">▸ </span><span x-text="s.name"></span>
+                                                    <span class="kbadge" x-show="consoleKey(st.id,{type:'scene',sceneId:s.id})" x-text="consoleKey(st.id,{type:'scene',sceneId:s.id})"></span>
+                                                </button>
+                                                <button class="iconbtn scene-open" :class="{open: isSceneOpen(st, s)}" title="Open media — pick a clip directly" @click="toggleSceneOpen(st, s)" x-html="icon('down')"></button>
+                                            </div>
+                                            <template x-if="isSceneOpen(st, s)">
+                                                <div class="cr-clips" :data-cr-clips="isActiveScene(st,s) ? st.machineId : ''">
+                                                    <template x-for="f in filesOf(s)" :key="f.name">
+                                                        <div class="cr-clip" :data-name="f.name" :class="{learned: consoleKey(st.id,{type:'media',sceneId:s.id,name:f.name}), playing: isActiveScene(st,s) && isCurrentClip(st, f)}" @click="playClip(project(), st, s, f)">
+                                                            <img :src="f.thumb" loading="lazy">
+                                                            <span class="kbadge" x-show="consoleKey(st.id,{type:'media',sceneId:s.id,name:f.name})" x-text="consoleKey(st.id,{type:'media',sceneId:s.id,name:f.name})"></span>
+                                                        </div>
+                                                    </template>
+                                                    <span class="muted" x-show="!filesOf(s).length">empty scene</span>
+                                                </div>
+                                            </template>
+                                        </div>
                                     </template>
                                 </div>
-                                <template x-if="activeSceneOf(project(), st)">
-                                    <div class="cr-clips" :data-cr-clips="st.machineId">
-                                        <template x-for="f in filesOf(activeSceneOf(project(), st))" :key="f.name">
-                                            <div class="cr-clip" :data-name="f.name" :class="{learned: consoleKey(st.id,{type:'media',sceneId:activeSceneOf(project(),st).id,name:f.name}), playing: isCurrentClip(st, f)}" @click="playClip(project(), st, activeSceneOf(project(),st), f)">
-                                                <img :src="f.thumb" loading="lazy">
-                                                <span class="kbadge" x-show="consoleKey(st.id,{type:'media',sceneId:activeSceneOf(project(),st).id,name:f.name})" x-text="consoleKey(st.id,{type:'media',sceneId:activeSceneOf(project(),st).id,name:f.name})"></span>
-                                            </div>
-                                        </template>
-                                        <span class="muted" x-show="!filesOf(activeSceneOf(project(), st)).length">empty scene</span>
-                                    </div>
-                                </template>
                             </div>
                         </template>
                         <p class="muted" x-show="project().stations.length===0">No stations — use “+ add station” to bind a machine.</p>

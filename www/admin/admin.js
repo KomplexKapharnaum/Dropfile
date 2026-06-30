@@ -78,7 +78,7 @@ function adminApp() {
             { cmd: 'next', label: 'Next', icon: 'next' },
             { cmd: 'reload', label: 'Reload', icon: 'reload' }
         ],
-        socket: null, status: {}, autoScroll: true, autoplayOpts: {},
+        socket: null, status: {}, autoScroll: true, autoplayOpts: {}, crOpen: {},
         stationMidiMedia: {},   // station id -> active scene files (station modal, local MIDI)
 
         icon(name) { return svgIcon(ICONS[name] || ''); },
@@ -267,16 +267,29 @@ function adminApp() {
         renameStation(p, st) { const name = prompt('Station nickname', st.nickname); if (!name) return; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}`, { nickname: name.trim() }); this.replaceProject(r.project); }); },
 
         isActiveScene(st, s) { return st.activeSceneId === s.id; },
-        activeSceneOf(p, st) { return st.activeSceneId ? (p.sources || []).find(s => s.id === st.activeSceneId) : null; },
+        // which scene's media grid is open in this station's column (defaults to the active scene)
+        openSceneId(st) { const v = this.crOpen[st.id]; return (v === undefined) ? st.activeSceneId : v; },
+        isSceneOpen(st, s) { return this.openSceneId(st) === s.id; },
+        toggleSceneOpen(st, s) {
+            const cur = this.openSceneId(st);
+            this.crOpen[st.id] = (cur === s.id) ? '' : s.id;     // accordion: one scene open at a time
+            const p = this.project(); if (p) this.ensureFiles(p, s);
+        },
+        // click a scene -> start the whole scene (diaporama loop)
         playScene(p, st, s) {
             if (this.consoleLearn) return this.learnConsole(st.id, { type: 'scene', sceneId: s.id });
-            this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: s.id }); this.replaceProject(r.project); this.ensureFiles(p, s); });
+            this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: s.id }); this.replaceProject(r.project); this.crOpen[st.id] = s.id; this.ensureFiles(p, s); });
         },
+        // click a clip -> jump straight to it (held + looped), even from a non-active scene
         playClip(p, st, s, f) {
             if (this.consoleLearn) return this.learnConsole(st.id, { type: 'media', sceneId: s.id, name: f.name });
             this.guard(async () => {
-                if (st.activeSceneId !== s.id) { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: s.id }); this.replaceProject(r.project); }
-                await api('POST', `/projects/${p.id}/stations/${st.id}/command`, { cmd: 'select', name: f.name });
+                if (st.activeSceneId === s.id) {                 // already showing this scene -> just hold the clip
+                    await api('POST', `/projects/${p.id}/stations/${st.id}/command`, { cmd: 'select', name: f.name });
+                } else {                                         // one atomic activate+select -> no scene-loop flash
+                    const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: s.id, name: f.name });
+                    this.replaceProject(r.project); this.crOpen[st.id] = s.id;
+                }
                 this.notify('▸ ' + f.name);
             });
         },
@@ -363,7 +376,7 @@ function adminApp() {
         dispatchConsole(p, st, a) {
             const base = `/projects/${p.id}/stations/${st.id}`;
             if (a.type === 'scene') api('PUT', base + '/active', { sceneId: a.sceneId }).then(r => this.replaceProject(r.project)).catch(() => {});
-            else if (a.type === 'media') api('PUT', base + '/active', { sceneId: a.sceneId }).then(() => api('POST', base + '/command', { cmd: 'select', name: a.name })).catch(() => {});
+            else if (a.type === 'media') api('PUT', base + '/active', { sceneId: a.sceneId, name: a.name }).then(r => this.replaceProject(r.project)).catch(() => {});
             else if (a.type === 'autoplay') api('POST', base + '/command', { cmd: 'autoplay' }).catch(() => {});
             else if (a.type === 'transport') api('POST', base + '/command', { cmd: a.cmd }).catch(() => {});
             else if (a.type === 'blackout') api('POST', base + '/command', { cmd: 'blackout' }).catch(() => {});

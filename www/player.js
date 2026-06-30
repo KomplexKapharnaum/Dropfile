@@ -63,9 +63,14 @@
     socket.on('active-change', (data) => {
         active = data.active || null;
         playlist = data.media || [];
+        if (data.playMode) settings.playMode = data.playMode;   // scene-loop vs held clip
         buildQueue();
         updateStreamMembership();
-        if (!streaming) start();
+        if (!streaming) {
+            // a directly-picked clip jumps straight to it (no scene-loop first)
+            if (data.selectedName && settings.playMode === 'manual') { selectByName(data.selectedName); if (!current) start(); }
+            else start();
+        }
     });
     socket.on('new-media', (m) => { fresh.push(m); updateCounter(); });
     socket.on('command', (c) => {
@@ -317,7 +322,9 @@
                 .catch(() => { textContent = ''; redraw(); scheduleNext(); });
         } else {
             video.onloadeddata = () => startRaf();
-            video.onended = () => next();
+            // a manually-selected clip loops itself; in diaporama it advances on end
+            video.loop = (settings.playMode === 'manual');
+            video.onended = () => { if (settings.playMode !== 'manual') next(); };
             video.src = item.url;
             video.currentTime = 0;
             const p = video.play();
