@@ -1,18 +1,15 @@
-// Admin SPA logic (Alpine.js component). All API calls go under /admin/api,
-// which shares the Basic-auth protection space so the browser sends credentials.
+// Admin SPA (Alpine.js). Views: 'projects' (landing) · 'players' (pool) ·
+// 'workspace' (one project: live control room + scenes/media). All API calls go
+// under /admin/api (shares the Basic-auth protection space).
 async function api(method, pathname, body) {
     const opts = { method, headers: {} };
-    if (body !== undefined) {
-        opts.headers['Content-Type'] = 'application/json';
-        opts.body = JSON.stringify(body);
-    }
+    if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
     const r = await fetch('/admin/api' + pathname, opts);
     if (!r.ok) throw new Error((await r.text().catch(() => '')) || ('HTTP ' + r.status));
     const ct = r.headers.get('content-type') || '';
     return ct.includes('application/json') ? r.json() : r.text();
 }
 
-// --- inline icons (stroke, currentColor) ---
 function svgIcon(inner) {
     return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
 }
@@ -21,14 +18,16 @@ const ICONS = {
     trash: '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>',
     copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3"/><path d="M21 14v.01"/><path d="M14 21h.01"/><path d="M21 21v-3h-3"/>',
+    share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
     close: '<path d="M18 6 6 18"/><path d="M6 6l12 12"/>',
     left: '<path d="M15 18l-6-6 6-6"/>',
     right: '<path d="M9 18l6-6-6-6"/>',
     down: '<path d="M6 9l6 6 6-6"/>',
+    back: '<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>',
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
     plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
     archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>',
-    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+    open: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.35-4.35a2 2 0 0 0-2.83 0L5 19"/>',
     video: '<rect x="2" y="5" width="14" height="14" rx="2"/><path d="m22 8-6 4 6 4V8Z"/>',
@@ -44,18 +43,23 @@ const ICONS = {
 
 function adminApp() {
     return {
-        tab: 'projects',
+        view: 'projects',
+        projectId: null,
         publicUrl: '',
         projects: [],
         players: [],
         toast: '',
-        editPlayers: {},   // per-project: choosing enabled players
-        editProjects: {},  // per-player: choosing attached projects
-        paused: {},        // per-player optimistic play/pause state (remote)
-        midiBus: null,
-        midiPorts: [],
-        midiLive: null,    // player id driven live by the admin's MIDI device
-        midiMedia: {},     // player id -> active-scene files (for mapping)
+        // scene/media explorer state (keyed by scene id)
+        expanded: {}, files: {}, sel: {},
+        uploading: {}, uploadTarget: null,
+        // overlays
+        share: { open: false, url: '', title: '' },
+        lightbox: { open: false, files: [], index: 0 },
+        // drag
+        drag: { sid: null, from: -1, name: null },
+        sceneDrag: { pid: null, from: -1, sid: null },
+        // MIDI
+        midiBus: null, midiPorts: [], consoleLearn: false, midiLive: null,
         transportTargets: [
             { cmd: 'restart', label: 'Restart', icon: 'restart' },
             { cmd: 'prev', label: 'Prev', icon: 'prev' },
@@ -64,168 +68,92 @@ function adminApp() {
             { cmd: 'next', label: 'Next', icon: 'next' },
             { cmd: 'reload', label: 'Reload', icon: 'reload' }
         ],
-        // per-scene UI state (keyed by scene id)
-        expanded: {},
-        files: {},
-        sel: {},
-        uploading: {},
-        uploadTarget: null,
-        // drag state
-        drag: { sid: null, from: -1, name: null },         // media tiles
-        sceneDrag: { pid: null, from: -1, sid: null },      // scenes
-        // overlays
-        lightbox: { open: false, files: [], index: 0 },
-        qr: { open: false, url: '', title: '' },
+        paused: {},
+        playerMidiMedia: {},   // player id -> active scene files (players page, local MIDI)
 
         icon(name) { return svgIcon(ICONS[name] || ''); },
         pad(n) { return String(n).padStart(2, '0'); },
 
         async init() {
-            try {
-                const c = await api('GET', '/config');
-                this.publicUrl = c.publicUrl || location.origin;
-            } catch (e) { this.publicUrl = location.origin; }
+            try { const c = await api('GET', '/config'); this.publicUrl = c.publicUrl || location.origin; }
+            catch (e) { this.publicUrl = location.origin; }
             if (!this.publicUrl) this.publicUrl = location.origin;
             await this.loadAll();
         },
-
-        notify(msg) { this.toast = msg; setTimeout(() => { if (this.toast === msg) this.toast = ''; }, 2000); },
+        notify(m) { this.toast = m; setTimeout(() => { if (this.toast === m) this.toast = ''; }, 2000); },
         async guard(fn) { try { await fn(); } catch (e) { this.notify('Error: ' + e.message); } },
-
         base() { return (this.publicUrl || location.origin).replace(/\/$/, ''); },
         dropUrl(s) { return this.base() + '/d/' + s.dropToken; },
         playerUrl(pl) { return this.base() + '/p/' + pl.token; },
-        qrPng(data) { return '/admin/api/qr?type=png&data=' + encodeURIComponent(data); },
-        copy(text) { navigator.clipboard.writeText(text).then(() => this.notify('Link copied')); },
+        qrPng(d) { return '/admin/api/qr?type=png&data=' + encodeURIComponent(d); },
 
         async loadAll() { await this.loadProjects(); await this.loadPlayers(); },
         async loadProjects() { this.projects = (await api('GET', '/projects')).projects; },
         async loadPlayers() {
             this.players = (await api('GET', '/players')).players;
-            this.players.forEach(pl => { if (pl.settings && pl.settings.playMode === 'midi') this.loadMidiMedia(pl); });
+            this.players.forEach(pl => { if (pl.settings && pl.settings.playMode === 'midi') this.loadPlayerMidiMedia(pl); });
+        },
+        project() { return this.projects.find(p => p.id === this.projectId) || null; },
+        replaceProject(project) {
+            const i = this.projects.findIndex(x => x.id === project.id);
+            if (i >= 0) this.projects.splice(i, 1, project); else this.projects.push(project);
+        },
+
+        // ---- navigation ----
+        openProject(p) { this.projectId = p.id; this.view = 'workspace'; this.consoleLearn = false; window.scrollTo(0, 0); (p.sources || []).forEach(s => this.ensureFiles(p, s)); },
+        goProjects() { this.view = 'projects'; this.projectId = null; },
+        goPlayers() { this.view = 'players'; },
+
+        // ---- share modal ----
+        openShare(url, title) { this.share = { open: true, url, title: title || '' }; },
+        closeShare() { this.share.open = false; },
+        copyText(t) { navigator.clipboard.writeText(t).then(() => this.notify('Copied')); },
+        async copyImage(url) {
+            try { const b = await (await fetch(this.qrPng(url))).blob(); await navigator.clipboard.write([new ClipboardItem({ [b.type]: b })]); this.notify('QR image copied'); }
+            catch (e) { this.notify('Copy not supported — use download'); }
+        },
+        async downloadImage(url, title) {
+            try { const b = await (await fetch(this.qrPng(url))).blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'qr-' + (title || 'dropfile').replace(/[^a-z0-9]+/gi, '-') + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+            catch (e) { this.notify('Download failed'); }
         },
 
         // ---- projects ----
         createProject() {
             const name = (prompt('Project name', '') || '').trim(); if (!name) return;
-            this.guard(async () => { await api('POST', '/projects', { name }); await this.loadProjects(); });
+            this.guard(async () => { const r = await api('POST', '/projects', { name }); await this.loadProjects(); this.openProject(r.project); });
         },
-        renameProject(p) {
-            const name = prompt('Project name', p.name); if (!name) return;
-            this.guard(async () => { await api('PUT', '/projects/' + p.id, { name }); await this.loadAll(); });
-        },
+        renameProject(p) { const name = prompt('Project name', p.name); if (!name) return; this.guard(async () => { const r = await api('PUT', '/projects/' + p.id, { name }); this.replaceProject(r.project); }); },
         deleteProject(p) {
             if (!confirm('Delete project "' + p.name + '"? Media files stay on disk.')) return;
-            this.guard(async () => { await api('DELETE', '/projects/' + p.id); await this.loadAll(); });
+            this.guard(async () => { await api('DELETE', '/projects/' + p.id); await this.loadAll(); this.goProjects(); });
         },
-        // clicking a project header collapses all its scenes
-        collapseScenes(p) { for (const s of p.sources) this.expanded[s.id] = false; },
 
         // ---- scenes ----
-        addScene(p) {
-            const name = prompt('Scene name', 'Scene'); if (name === null) return;
-            this.guard(async () => {
-                const r = await api('POST', '/projects/' + p.id + '/sources', { name: name.trim() || 'Scene', public: false });
-                this.replaceProject(r.project);
-            });
-        },
-        renameScene(p, s) {
-            const name = prompt('Scene name', s.name); if (!name) return;
-            this.guard(async () => {
-                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { name: name.trim() });
-                this.replaceProject(r.project);
-            });
-        },
-        toggleScenePublic(p, s) {
-            this.guard(async () => {
-                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { public: !s.public });
-                this.replaceProject(r.project);
-            });
-        },
-        toggleSelfDelete(p, s) {
-            this.guard(async () => {
-                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { allowSelfDelete: !s.allowSelfDelete });
-                this.replaceProject(r.project);
-            });
-        },
-        // accepted content types (image/video/text/stream) per scene
+        addScene(p) { const name = prompt('Scene name', 'Scene'); if (name === null) return; this.guard(async () => { const r = await api('POST', '/projects/' + p.id + '/sources', { name: name.trim() || 'Scene' }); this.replaceProject(r.project); }); },
+        renameScene(p, s) { const name = prompt('Scene name', s.name); if (!name) return; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { name: name.trim() }); this.replaceProject(r.project); }); },
+        deleteScene(p, s) { if (!confirm('Delete scene "' + s.name + '"? Files stay on disk.')) return; this.guard(async () => { const r = await api('DELETE', `/projects/${p.id}/sources/${s.id}`); this.replaceProject(r.project); delete this.expanded[s.id]; delete this.files[s.id]; delete this.sel[s.id]; }); },
+        toggleSelfDelete(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { allowSelfDelete: !s.allowSelfDelete }); this.replaceProject(r.project); }); },
         acceptAll(s) { return !!(s.accept && s.accept.image && s.accept.video && s.accept.text && s.accept.stream); },
-        setAcceptAll(p, s) {
-            this.guard(async () => {
-                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept: { image: true, video: true, text: true, stream: true } });
-                this.replaceProject(r.project);
-            });
-        },
-        toggleAccept(p, s, kind) {
-            const accept = Object.assign({ image: true, video: true, text: false, stream: false }, s.accept || {});
-            accept[kind] = !accept[kind];
-            this.guard(async () => {
-                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept });
-                this.replaceProject(r.project);
-            });
-        },
-        setStreamMode(p, s, mode) {
-            this.guard(async () => {
-                const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { streamMode: mode });
-                this.replaceProject(r.project);
-            });
-        },
-        deleteScene(p, s) {
-            if (!confirm('Delete scene "' + s.name + '"? Files stay on disk.')) return;
-            this.guard(async () => {
-                const r = await api('DELETE', `/projects/${p.id}/sources/${s.id}`);
-                this.replaceProject(r.project);
-                delete this.expanded[s.id]; delete this.files[s.id]; delete this.sel[s.id];
-            });
-        },
-        replaceProject(project) {
-            const i = this.projects.findIndex(x => x.id === project.id);
-            if (i >= 0) this.projects.splice(i, 1, project); else this.projects.push(project);
-            this.loadPlayers();
-        },
+        setAcceptAll(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept: { image: true, video: true, text: true, stream: true } }); this.replaceProject(r.project); }); },
+        toggleAccept(p, s, kind) { const accept = Object.assign({ image: true, video: true, text: false, stream: false }, s.accept || {}); accept[kind] = !accept[kind]; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept }); this.replaceProject(r.project); }); },
+        setStreamMode(p, s, mode) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { streamMode: mode }); this.replaceProject(r.project); }); },
 
-        // ---- scene drag reorder (handle = index chip) ----
-        sceneDragStart(p, i, ev) {
-            this.sceneDrag = { pid: p.id, from: i, sid: p.sources[i].id };
-            if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
-        },
-        sceneDragOver(p, i) {
-            if (this.sceneDrag.pid !== p.id || this.sceneDrag.from === i || i < 0) return;
-            const cont = document.querySelector(`[data-scenes="${p.id}"]`);
-            this.flipReorder(cont, p.sources, this.sceneDrag.from, i, 'sid');
-            this.sceneDrag.from = i;
-        },
-        sceneDragEnd(p) {
-            if (this.sceneDrag.pid === p.id) {
-                const order = p.sources.map(s => s.id);
-                this.guard(async () => { await api('PUT', `/projects/${p.id}/scene-order`, { order }); });
-            }
-            this.sceneDrag = { pid: null, from: -1, sid: null };
-        },
+        // scene drag-reorder (handle = index chip)
+        sceneDragStart(p, i, ev) { this.sceneDrag = { pid: p.id, from: i, sid: p.sources[i].id }; if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'; },
+        sceneDragOver(p, i) { if (this.sceneDrag.pid !== p.id || this.sceneDrag.from === i || i < 0) return; this.flip(document.querySelector(`[data-scenes="${p.id}"]`), p.sources, this.sceneDrag.from, i, 'sid'); this.sceneDrag.from = i; },
+        sceneDragEnd(p) { if (this.sceneDrag.pid === p.id) this.guard(async () => { await api('PUT', `/projects/${p.id}/scene-order`, { order: p.sources.map(s => s.id) }); }); this.sceneDrag = { pid: null, from: -1, sid: null }; },
         isSceneDragging(p, s) { return this.sceneDrag.pid === p.id && this.sceneDrag.sid === s.id; },
 
-        // ---- scene media (inline grid) ----
-        toggleExpand(p, s) {
-            this.expanded[s.id] = !this.expanded[s.id];
-            if (this.expanded[s.id] && !this.files[s.id]) this.loadFiles(p, s);
-        },
-        async loadFiles(p, s) {
-            await this.guard(async () => {
-                const r = await api('GET', `/projects/${p.id}/sources/${s.id}/files`);
-                this.files[s.id] = r.files;
-                this.sel[s.id] = {};
-            });
-        },
+        // ---- media explorer ----
+        toggleExpand(p, s) { this.expanded[s.id] = !this.expanded[s.id]; if (this.expanded[s.id] && !this.files[s.id]) this.loadFiles(p, s); },
+        async loadFiles(p, s) { await this.guard(async () => { const r = await api('GET', `/projects/${p.id}/sources/${s.id}/files`); this.files[s.id] = r.files; this.sel[s.id] = {}; }); },
         filesOf(s) { return this.files[s.id] || []; },
-
+        ensureFiles(p, s) { if (!this.files[s.id]) this.loadFiles(p, s); },
         addMedia(p, s) { this.uploadTarget = { p, s }; this.$refs.fileInput.click(); },
         onUpload(e) {
-            const input = e.target;
-            const files = input.files; if (!files || !files.length) return;
-            const { p, s } = this.uploadTarget || {};
-            if (!s) return;
-            const fd = new FormData();
-            for (const f of files) fd.append('files', f);
+            const input = e.target; const files = input.files; if (!files || !files.length) return;
+            const { p, s } = this.uploadTarget || {}; if (!s) return;
+            const fd = new FormData(); for (const f of files) fd.append('files', f);
             this.uploading[s.id] = true;
             fetch(`/admin/api/projects/${p.id}/sources/${s.id}/upload`, { method: 'POST', body: fd })
                 .then(r => { if (!r.ok) throw new Error('upload failed'); })
@@ -233,201 +161,97 @@ function adminApp() {
                 .catch(err => this.notify('Error: ' + err.message))
                 .finally(() => { this.uploading[s.id] = false; input.value = ''; });
         },
-
-        // ---- selection (per scene) + bulk ----
         toggleSel(s, name) { this.sel[s.id] = this.sel[s.id] || {}; this.sel[s.id][name] = !this.sel[s.id][name]; },
         isSel(s, name) { return !!(this.sel[s.id] && this.sel[s.id][name]); },
         selNames(s) { const m = this.sel[s.id] || {}; return Object.keys(m).filter(n => m[n]); },
         selCount(s) { return this.selNames(s).length; },
-        // selection-mode: once something is selected, a plain click toggles
-        // selection; otherwise it opens the preview.
-        tileClick(s, idx) {
-            const f = this.filesOf(s)[idx]; if (!f) return;
-            if (this.selCount(s) > 0) this.toggleSel(s, f.name);
-            else this.openLightbox(s, idx);
-        },
-        bulk(op, p, s) {
-            const names = this.selNames(s); if (!names.length) return;
-            if (op === 'delete' && !confirm('Permanently delete ' + names.length + ' file(s)?')) return;
-            this.guard(async () => {
-                const r = await api('POST', '/files/' + op, { projectId: p.id, sourceId: s.id, names });
-                await this.loadFiles(p, s); await this.loadProjects();
-                this.notify(op + ': ' + r.count);
-            });
-        },
-
-        // ---- media tile drag reorder (FLIP animated) ----
-        mediaDragStart(s, i, ev) {
-            this.drag = { sid: s.id, from: i, name: this.filesOf(s)[i].name };
-            if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
-        },
-        mediaDragOver(s, i) {
-            if (this.drag.sid !== s.id || this.drag.from === i || i < 0) return;
-            const grid = document.querySelector(`[data-grid="${s.id}"]`);
-            this.flipReorder(grid, this.files[s.id], this.drag.from, i, 'name');
-            this.drag.from = i;
-        },
-        mediaDragEnd(p, s) {
-            if (this.drag.sid === s.id) {
-                const order = this.files[s.id].map(f => f.name);
-                this.guard(async () => { await api('PUT', `/projects/${p.id}/sources/${s.id}/order`, { order }); });
-            }
-            this.drag = { sid: null, from: -1, name: null };
-        },
+        tileClick(s, idx) { const f = this.filesOf(s)[idx]; if (!f) return; if (this.selCount(s) > 0) this.toggleSel(s, f.name); else this.openLightbox(s, idx); },
+        bulk(op, p, s) { const names = this.selNames(s); if (!names.length) return; if (op === 'delete' && !confirm('Permanently delete ' + names.length + ' file(s)?')) return; this.guard(async () => { const r = await api('POST', '/files/' + op, { projectId: p.id, sourceId: s.id, names }); await this.loadFiles(p, s); await this.loadProjects(); this.notify(op + ': ' + r.count); }); },
+        mediaDragStart(s, i, ev) { this.drag = { sid: s.id, from: i, name: this.filesOf(s)[i].name }; if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'; },
+        mediaDragOver(s, i) { if (this.drag.sid !== s.id || this.drag.from === i || i < 0) return; this.flip(document.querySelector(`[data-grid="${s.id}"]`), this.files[s.id], this.drag.from, i, 'name'); this.drag.from = i; },
+        mediaDragEnd(p, s) { if (this.drag.sid === s.id) this.guard(async () => { await api('PUT', `/projects/${p.id}/sources/${s.id}/order`, { order: this.files[s.id].map(f => f.name) }); }); this.drag = { sid: null, from: -1, name: null }; },
         isDragging(s, f) { return this.drag.sid === s.id && this.drag.name === f.name; },
-
-        // FLIP: animate siblings to their new positions after an in-place move.
-        flipReorder(container, arr, from, to, key) {
+        flip(container, arr, from, to, key) {
             if (!container) { const [m] = arr.splice(from, 1); arr.splice(to, 0, m); return; }
             const before = new Map();
-            for (const c of container.children) {
-                const k = c.getAttribute('data-' + key);
-                if (k != null) before.set(k, c.getBoundingClientRect());
-            }
+            for (const c of container.children) { const k = c.getAttribute('data-' + key); if (k != null) before.set(k, c.getBoundingClientRect()); }
             const [m] = arr.splice(from, 1); arr.splice(to, 0, m);
-            this.$nextTick(() => {
-                for (const c of container.children) {
-                    const k = c.getAttribute('data-' + key);
-                    const f = k != null && before.get(k);
-                    if (!f) continue;
-                    const l = c.getBoundingClientRect();
-                    const dx = f.left - l.left, dy = f.top - l.top;
-                    if (dx || dy) {
-                        c.style.transition = 'none';
-                        c.style.transform = `translate(${dx}px,${dy}px)`;
-                        requestAnimationFrame(() => {
-                            c.style.transition = 'transform 170ms ease';
-                            c.style.transform = '';
-                        });
-                    }
-                }
-            });
+            this.$nextTick(() => { for (const c of container.children) { const k = c.getAttribute('data-' + key); const f = k != null && before.get(k); if (!f) continue; const l = c.getBoundingClientRect(); const dx = f.left - l.left, dy = f.top - l.top; if (dx || dy) { c.style.transition = 'none'; c.style.transform = `translate(${dx}px,${dy}px)`; requestAnimationFrame(() => { c.style.transition = 'transform 170ms ease'; c.style.transform = ''; }); } } });
         },
-
-        // ---- lightbox ----
         openLightbox(s, i) { this.lightbox = { open: true, files: this.files[s.id] || [], index: i }; },
         lbCurrent() { return this.lightbox.files[this.lightbox.index] || null; },
         lbNext() { const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index + 1) % n; },
         lbPrev() { const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index - 1 + n) % n; },
         lbClose() { this.lightbox.open = false; },
 
-        // ---- QR modal ----
-        openQr(url, title) { this.qr = { open: true, url, title: title || '' }; },
-        closeQr() { this.qr.open = false; },
-        async copyQrImage() {
-            try {
-                const blob = await (await fetch(this.qrPng(this.qr.url))).blob();
-                await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-                this.notify('QR image copied');
-            } catch (e) { this.notify('Copy not supported — use download'); }
-        },
-        async downloadQr() {
-            try {
-                const blob = await (await fetch(this.qrPng(this.qr.url))).blob();
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = 'qr-' + (this.qr.title || 'dropfile').replace(/[^a-z0-9]+/gi, '-') + '.png';
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-            } catch (e) { this.notify('Download failed'); }
-        },
+        // ---- players (pool) ----
+        createPlayer() { const name = (prompt('Player nickname', '') || '').trim(); if (!name) return; this.guard(async () => { await api('POST', '/players', { name }); await this.loadPlayers(); }); },
+        renamePlayer(pl) { const name = prompt('Player name', pl.name); if (!name) return; this.guard(async () => { await api('PUT', '/players/' + pl.id, { name }); await this.loadPlayers(); }); },
+        deletePlayer(pl) { if (!confirm('Delete player "' + pl.name + '"?')) return; this.guard(async () => { await api('DELETE', '/players/' + pl.id); await this.loadAll(); }); },
+        saveSettings(pl) { const settings = Object.assign({}, pl.settings); delete settings.midi; this.guard(async () => { await api('PUT', '/players/' + pl.id + '/settings', { settings }); this.notify('Applied live'); }); if (pl.settings.playMode === 'midi') this.loadPlayerMidiMedia(pl); },
 
-        // ---- players ----
-        createPlayer() {
-            const name = (prompt('Player nickname', '') || '').trim(); if (!name) return;
-            this.guard(async () => { await api('POST', '/players', { name }); await this.loadPlayers(); });
-        },
-        // players enabled on a project (full objects), lookups, and navigation
+        // ---- control room (workspace) ----
         attachedPlayers(p) { return this.players.filter(pl => (pl.projectIds || []).includes(p.id)); },
-        playerById(id) { return this.players.find(pl => pl.id === id); },
-        gotoPlayer(id) {
-            this.tab = 'players';
-            this.$nextTick(() => { const el = document.getElementById('player-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+        availablePlayers(p) { return this.players.filter(pl => !(pl.projectIds || []).includes(p.id)); },
+        attachPlayer(p, plId) { if (!plId) return; this.guard(async () => { await api('POST', '/players/' + plId + '/attach', { projectId: p.id }); await this.loadPlayers(); }); },
+        detachPlayer(p, pl) { this.guard(async () => { await api('POST', '/players/' + pl.id + '/detach', { projectId: p.id }); await this.loadPlayers(); }); },
+        isActiveScene(pl, p, s) { return pl.activeProjectId === p.id && pl.activeSourceId === s.id; },
+        playScene(p, pl, s) {
+            if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'scene', sceneId: s.id });
+            this.guard(async () => { await api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: s.id }); await this.loadPlayers(); this.ensureFiles(p, s); });
         },
-        isActiveScene(pl, pid, sid) { return !!pl && pl.activeProjectId === pid && pl.activeSourceId === sid; },
-        projActiveKey(pl, pid) { return (pl && pl.activeProjectId === pid && pl.activeSourceId) ? pid + '|' + pl.activeSourceId : ''; },
-        renamePlayer(pl) {
-            const name = prompt('Player name', pl.name); if (!name) return;
-            this.guard(async () => { await api('PUT', '/players/' + pl.id, { name }); await this.loadAll(); });
-        },
-        deletePlayer(pl) {
-            if (!confirm('Delete player "' + pl.name + '"?')) return;
-            this.guard(async () => { await api('DELETE', '/players/' + pl.id); await this.loadAll(); });
-        },
-        isAttached(pl, projectId) { return (pl.projectIds || []).includes(projectId); },
-        toggleAttach(pl, projectId) {
-            const p = '/players/' + pl.id + (this.isAttached(pl, projectId) ? '/detach' : '/attach');
-            this.guard(async () => { await api('POST', p, { projectId }); await this.loadAll(); });
-        },
-        attachedProjects(pl) { return this.projects.filter(p => (pl.projectIds || []).includes(p.id)); },
-        sourcesFor(pl) {
-            const out = [];
-            for (const p of this.attachedProjects(pl)) {
-                for (const s of p.sources) out.push({ key: p.id + '|' + s.id, label: p.name + ' / ' + s.name });
-            }
-            return out;
-        },
-        activeKey(pl) { return (pl.activeProjectId && pl.activeSourceId) ? pl.activeProjectId + '|' + pl.activeSourceId : ''; },
-        setActive(pl, key) {
-            let projectId = '', sourceId = '';
-            if (key) [projectId, sourceId] = key.split('|');
-            this.guard(async () => { await api('PUT', '/players/' + pl.id + '/active', { projectId, sourceId }); await this.loadPlayers(); this.notify('Source set'); });
-        },
-        saveSettings(pl) {
-            const settings = Object.assign({}, pl.settings); delete settings.midi; // midi map has its own endpoint
-            this.guard(async () => { await api('PUT', '/players/' + pl.id + '/settings', { settings }); this.notify('Applied live'); });
-            if (pl.settings.playMode === 'midi' && !(this.midiMedia[pl.id] || []).length) this.loadMidiMedia(pl);
-        },
-        playerCommand(pl, cmd) {
-            this.guard(async () => { await api('POST', '/players/' + pl.id + '/command', { cmd }); });
-        },
-        togglePause(pl) {
-            const p = !this.paused[pl.id];
-            this.paused[pl.id] = p;
-            this.playerCommand(pl, p ? 'pause' : 'play');
-        },
-
-        // ---- MIDI (admin side: learn + live drive) ----
-        async ensureMidi() {
-            if (this.midiBus || !window.MidiBus) return;
-            const bus = new MidiBus();
-            bus.onpress = (key) => this.onMidiPress(key);
-            bus.onports = (names) => { this.midiPorts = names; };
-            try { await bus.init(); this.midiBus = bus; } catch (e) { this.midiBus = null; this.notify('Web MIDI unavailable'); }
-        },
-        midiEnsureMap(pl) { pl.settings = pl.settings || {}; pl.settings.midi = pl.settings.midi || { map: {} }; pl.settings.midi.map = pl.settings.midi.map || {}; return pl.settings.midi.map; },
-        midiSameAction(a, b) { return a && b && a.type === b.type && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); },
-        midiKeyLabel(pl, action) {
-            const map = (pl.settings && pl.settings.midi && pl.settings.midi.map) || {};
-            for (const [k, a] of Object.entries(map)) if (this.midiSameAction(a, action)) return window.midiKeyLabel(k);
-            return 'unmapped';
-        },
-        async midiLearn(pl, action) {
-            await this.ensureMidi();
-            if (!this.midiBus) return;
-            this.notify('Press a pad…');
-            this.midiBus.learnNext((key) => {
-                const map = this.midiEnsureMap(pl);
-                for (const k of Object.keys(map)) if (this.midiSameAction(map[k], action)) delete map[k];
-                map[key] = action;
-                this.midiSave(pl);
+        activeSceneOf(p, pl) { return (pl.activeProjectId === p.id) ? p.sources.find(s => s.id === pl.activeSourceId) : null; },
+        playClip(p, pl, s, f) {
+            if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'media', sceneId: s.id, name: f.name });
+            this.guard(async () => {
+                if (!this.isActiveScene(pl, p, s)) { await api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: s.id }); await this.loadPlayers(); }
+                await api('POST', '/players/' + pl.id + '/command', { cmd: 'select', name: f.name });
+                this.notify('▸ ' + f.name);
             });
         },
-        midiClear(pl, action) { const map = this.midiEnsureMap(pl); for (const k of Object.keys(map)) if (this.midiSameAction(map[k], action)) delete map[k]; this.midiSave(pl); },
-        midiSave(pl) { this.guard(async () => { await api('PUT', '/players/' + pl.id + '/midi', { map: this.midiEnsureMap(pl) }); this.notify('MIDI saved'); }); },
-        async toggleMidiLive(pl) { await this.ensureMidi(); this.midiLive = (this.midiLive === pl.id) ? null : pl.id; },
+        setMode(pl, mode) { pl.settings.playMode = mode; this.saveSettings(pl); },
+        transport(pl, cmd) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'transport', cmd }); api('POST', '/players/' + pl.id + '/command', { cmd }).catch(() => {}); },
+        blackout(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'blackout' }); api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {}); },
+
+        // ---- console MIDI (operator desk, per workspace) ----
+        async ensureMidi() { if (this.midiBus || !window.MidiBus) return; const bus = new MidiBus(); bus.onpress = (k) => this.onMidiPress(k); bus.onports = (n) => { this.midiPorts = n; }; try { await bus.init(); this.midiBus = bus; } catch (e) { this.midiBus = null; this.notify('Web MIDI unavailable'); } },
+        async toggleConsoleLearn() { await this.ensureMidi(); this.consoleLearn = !this.consoleLearn; this.notify(this.consoleLearn ? 'MIDI learn: click a trigger, then press a pad' : 'MIDI learn off'); },
+        consoleMap() { const p = this.project(); if (!p) return {}; p.console = p.console || { map: {} }; return p.console.map; },
+        sameAction(a, b) { return a && b && a.type === b.type && (a.sceneId || '') === (b.sceneId || '') && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); },
+        consoleKey(plId, action) { const map = this.consoleMap(); for (const [k, v] of Object.entries(map)) if (v.playerId === plId && this.sameAction(v.action, action)) return window.midiKeyLabel(k); return ''; },
+        async learnConsole(plId, action) {
+            await this.ensureMidi(); if (!this.midiBus) return;
+            this.notify('Press a pad…');
+            this.midiBus.learnNext((key) => {
+                const map = this.consoleMap();
+                for (const k of Object.keys(map)) if (map[k].playerId === plId && this.sameAction(map[k].action, action)) delete map[k];
+                map[key] = { playerId: plId, action };
+                this.saveConsole();
+            });
+        },
+        saveConsole() { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', '/projects/' + p.id + '/console', { map: this.consoleMap() }); this.notify('MIDI saved'); }); },
         onMidiPress(key) {
-            if (!this.midiLive) return;
-            const pl = this.players.find(p => p.id === this.midiLive); if (!pl) return;
-            const a = ((pl.settings && pl.settings.midi && pl.settings.midi.map) || {})[key]; if (!a) return;
-            if (a.type === 'media') api('POST', '/players/' + pl.id + '/command', { cmd: 'select', name: a.name }).catch(() => {});
+            // console live-drive (only in a workspace, not while learning)
+            if (this.view !== 'workspace' || this.consoleLearn) return;
+            const p = this.project(); if (!p) return;
+            const bind = (p.console && p.console.map || {})[key]; if (!bind) return;
+            const pl = this.players.find(x => x.id === bind.playerId); if (!pl) return;
+            this.dispatchConsole(p, pl, bind.action);
+        },
+        dispatchConsole(p, pl, a) {
+            if (a.type === 'scene') api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: a.sceneId }).then(() => this.loadPlayers()).catch(() => {});
+            else if (a.type === 'media') api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: a.sceneId }).then(() => api('POST', '/players/' + pl.id + '/command', { cmd: 'select', name: a.name })).catch(() => {});
             else if (a.type === 'transport') api('POST', '/players/' + pl.id + '/command', { cmd: a.cmd }).catch(() => {});
             else if (a.type === 'blackout') api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {});
         },
-        loadMidiMedia(pl) {
-            if (!pl.activeProjectId || !pl.activeSourceId) { this.midiMedia[pl.id] = []; return; }
-            api('GET', `/projects/${pl.activeProjectId}/sources/${pl.activeSourceId}/files`).then(r => { this.midiMedia[pl.id] = r.files; }).catch(() => { this.midiMedia[pl.id] = []; });
-        },
+
+        // ---- player-local MIDI (Players page) ----
+        playerMidiEnsureMap(pl) { pl.settings = pl.settings || {}; pl.settings.midi = pl.settings.midi || { map: {} }; pl.settings.midi.map = pl.settings.midi.map || {}; return pl.settings.midi.map; },
+        pmSame(a, b) { return a && b && a.type === b.type && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); },
+        playerMidiKey(pl, action) { const map = (pl.settings && pl.settings.midi && pl.settings.midi.map) || {}; for (const [k, a] of Object.entries(map)) if (this.pmSame(a, action)) return window.midiKeyLabel(k); return 'unmapped'; },
+        async playerMidiLearn(pl, action) { await this.ensureMidi(); if (!this.midiBus) return; this.notify('Press a pad…'); this.midiBus.learnNext((key) => { const map = this.playerMidiEnsureMap(pl); for (const k of Object.keys(map)) if (this.pmSame(map[k], action)) delete map[k]; map[key] = action; this.playerMidiSave(pl); }); },
+        playerMidiSave(pl) { this.guard(async () => { await api('PUT', '/players/' + pl.id + '/midi', { map: this.playerMidiEnsureMap(pl) }); this.notify('MIDI saved'); }); },
+        loadPlayerMidiMedia(pl) { if (!pl.activeProjectId || !pl.activeSourceId) { this.playerMidiMedia[pl.id] = []; return; } api('GET', `/projects/${pl.activeProjectId}/sources/${pl.activeSourceId}/files`).then(r => { this.playerMidiMedia[pl.id] = r.files; }).catch(() => { this.playerMidiMedia[pl.id] = []; }); },
 
         fmtSize(n) { if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(0) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
     };

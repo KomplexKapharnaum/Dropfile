@@ -13,358 +13,304 @@
 <div id="app" x-data="adminApp()" x-init="init()"
      @keydown.window.arrow-right="lightbox.open && lbNext()"
      @keydown.window.arrow-left="lightbox.open && lbPrev()"
-     @keydown.window.escape="lightbox.open ? lbClose() : (qr.open && closeQr())">
+     @keydown.window.escape="lightbox.open ? lbClose() : (share.open && closeShare())">
 
     <input type="file" multiple x-ref="fileInput" @change="onUpload($event)" style="display:none">
 
     <header class="topbar">
-        <h1>Dropfile <span class="muted">media controller</span></h1>
+        <div class="brand">
+            <span class="logo" @click="goProjects()">Dropfile</span>
+            <template x-if="view==='workspace' && project()">
+                <span class="crumb"><span class="sep">/</span> <span x-text="project().name"></span></span>
+            </template>
+        </div>
         <nav class="tabs">
-            <button :class="{active: tab==='projects'}" @click="tab='projects'">Projects</button>
-            <button :class="{active: tab==='players'}" @click="tab='players'">Players</button>
-            <a class="tablink" href="/diag" target="_blank" title="WebRTC / coturn diagnostic">WebRTC ↗</a>
+            <button :class="{active: view==='projects'}" @click="goProjects()">Projects</button>
+            <button :class="{active: view==='players'}" @click="goPlayers()">Players</button>
+            <a class="tablink" href="/diag" target="_blank">WebRTC ↗</a>
         </nav>
     </header>
 
     <div class="toast" x-show="toast" x-text="toast" x-cloak></div>
 
-    <!-- ===================== PROJECTS ===================== -->
-    <main x-show="tab==='projects'" x-cloak>
-        <div class="newrow">
+    <!-- ===================== LANDING: PROJECTS ===================== -->
+    <main x-show="view==='projects'" x-cloak>
+        <div class="page-head">
+            <h1>Projects</h1>
             <button class="primary" @click="createProject()"><span x-html="icon('plus')"></span> Project</button>
         </div>
-
-        <template x-for="p in projects" :key="p.id">
-            <section class="card">
-                <div class="card-head clickable" @click="collapseScenes(p)" title="Click to collapse all scenes">
-                    <div class="title-wrap">
-                        <h2 x-text="p.name"></h2>
-                        <button class="iconbtn" title="Rename" @click.stop="renameProject(p)" x-html="icon('pencil')"></button>
-                    </div>
-                    <div class="actions">
-                        <button @click.stop="addScene(p)"><span x-html="icon('plus')"></span> Scene</button>
-                        <button class="iconbtn danger" title="Delete project" @click.stop="deleteProject(p)" x-html="icon('trash')"></button>
+        <div class="cards">
+            <template x-for="p in projects" :key="p.id">
+                <div class="pcard" @click="openProject(p)">
+                    <h2 x-text="p.name"></h2>
+                    <div class="pcard-meta">
+                        <span x-text="p.sceneCount + (p.sceneCount===1?' scene':' scenes')"></span>
+                        <span x-text="p.mediaCount + (p.mediaCount===1?' media':' medias')"></span>
+                        <span x-text="(p.players||[]).length + ' players'"></span>
                     </div>
                 </div>
-
-                <div class="players-row">
-                    <button class="iconbtn" title="Choose enabled players" @click="editPlayers[p.id] = !editPlayers[p.id]" x-html="icon('gear')"></button>
-                    <template x-if="!editPlayers[p.id]">
-                        <span class="prow-list">
-                            <template x-for="pl in attachedPlayers(p)" :key="pl.id">
-                                <span class="pbadge">
-                                    <span class="pname" title="Open player settings" @click="gotoPlayer(pl.id)" x-text="pl.name"></span>
-                                    <select class="pscene" title="Active scene for this player"
-                                            @change="setActive(playerById(pl.id), $event.target.value)">
-                                        <option value="" :selected="projActiveKey(pl, p.id)===''">scene…</option>
-                                        <template x-for="(s, i) in p.sources" :key="s.id">
-                                            <option :value="p.id + '|' + s.id" :selected="isActiveScene(pl, p.id, s.id)" x-text="pad(i+1) + ' ' + s.name"></option>
-                                        </template>
-                                    </select>
-                                </span>
-                            </template>
-                            <span class="muted" x-show="attachedPlayers(p).length===0">No players enabled — use the gear ⚙</span>
-                        </span>
-                    </template>
-                    <template x-if="editPlayers[p.id]">
-                        <span class="prow-edit">
-                            <template x-for="pl in players" :key="pl.id">
-                                <span class="badge-toggle" :class="{on: isAttached(pl, p.id)}" @click="toggleAttach(pl, p.id)" x-text="pl.name"></span>
-                            </template>
-                            <span class="muted" x-show="players.length===0">Create a player first.</span>
-                        </span>
-                    </template>
-                </div>
-
-                <div class="scenes" :data-scenes="p.id">
-                    <template x-for="(s, idx) in p.sources" :key="s.id">
-                        <div class="scene" :class="{dragging: isSceneDragging(p,s)}" :data-sid="s.id"
-                             @dragover.prevent="sceneDragOver(p,idx)" @drop.prevent>
-                            <div class="scene-head" @click="toggleExpand(p,s)">
-                                <span class="sidx" draggable="true" title="Drag to reorder scenes"
-                                      @click.stop @dragstart="sceneDragStart(p,idx,$event)" @dragend="sceneDragEnd(p)"
-                                      x-text="pad(idx+1)"></span>
-                                <strong class="scene-name" x-text="s.name"></strong>
-                                <button class="iconbtn" title="Rename scene" @click.stop="renameScene(p,s)" x-html="icon('pencil')"></button>
-                                <span class="typetoggle" x-show="s.public" @click.stop>
-                                    <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(p,s)" title="Accept all types">All</button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(p,s,'image')" title="Images" x-html="icon('image')"></button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(p,s,'video')" title="Videos" x-html="icon('video')"></button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(p,s,'text')" title="Text" x-html="icon('text')"></button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(p,s,'stream')" title="Camera stream" x-html="icon('stream')"></button>
-                                    <select class="streammode" x-show="s.accept && s.accept.stream" @change="setStreamMode(p,s,$event.target.value)" title="When multiple streamers join">
-                                        <option value="replace" :selected="s.streamMode!=='grid'">single</option>
-                                        <option value="grid" :selected="s.streamMode==='grid'">grid</option>
-                                    </select>
-                                </span>
-                                <span class="spacer"></span>
-                                <span class="count" x-text="s.count + (s.count===1 ? ' file' : ' files')"></span>
-                                <button class="iconbtn chev" :class="{open: expanded[s.id]}" x-html="icon('down')"></button>
-                                <button class="iconbtn danger" title="Delete scene" @click.stop="deleteScene(p,s)" x-html="icon('trash')"></button>
-                            </div>
-
-                            <div class="scene-row2">
-                                <label class="switch c-toggle" @click.stop :title="s.public ? 'Public — has a drop URL' : 'Private — admin only'">
-                                    <input type="checkbox" :checked="s.public" @change="toggleScenePublic(p,s)">
-                                    <span class="slider"></span>
-                                    <span class="switch-label" x-text="s.public ? 'public' : 'private'"></span>
-                                </label>
-                                <a class="url c-url" x-show="s.public" :href="dropUrl(s)" target="_blank" @click.stop x-text="dropUrl(s)"></a>
-                                <button class="iconbtn c-copy" x-show="s.public" title="Copy link" @click.stop="copy(dropUrl(s))" x-html="icon('copy')"></button>
-                                <button class="iconbtn c-qr" x-show="s.public" title="Show QR" @click.stop="openQr(dropUrl(s), p.name + ' / ' + s.name)" x-html="icon('qr')"></button>
-                                <label class="chk small c-chk" x-show="s.public" @click.stop>
-                                    <input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(p,s)">
-                                    uploaders delete own
-                                </label>
-                            </div>
-
-                            <div class="scene-body" x-show="expanded[s.id]" x-cloak>
-                                <div class="grid-tools">
-                                    <button @click="addMedia(p,s)"><span x-html="icon('plus')"></span> Add media</button>
-                                    <span class="muted" x-show="uploading[s.id]">uploading…</span>
-                                    <span class="spacer"></span>
-                                    <template x-if="selCount(s) > 0">
-                                        <span class="bulk">
-                                            <span class="muted" x-text="selCount(s) + ' selected'"></span>
-                                            <button @click="bulk('archive',p,s)"><span x-html="icon('archive')"></span> Archive</button>
-                                            <button class="danger" @click="bulk('delete',p,s)"><span x-html="icon('trash')"></span> Delete</button>
-                                        </span>
-                                    </template>
-                                </div>
-
-                                <p class="muted hint" x-show="(files[s.id]||[]).length"
-                                   x-text="selCount(s) > 0 ? 'Click thumbnails to select · drag to reorder' : 'Click to preview · drag to reorder'"></p>
-
-                                <div class="grid" :data-grid="s.id">
-                                    <template x-for="(f, idx) in filesOf(s)" :key="f.name">
-                                        <div class="tile" :class="{sel: isSel(s,f.name), dragging: isDragging(s,f)}"
-                                             :data-name="f.name" draggable="true"
-                                             @dragstart="mediaDragStart(s,idx,$event)" @dragover.prevent="mediaDragOver(s,idx)"
-                                             @drop.prevent @dragend="mediaDragEnd(p,s)"
-                                             @click="tileClick(s,idx)">
-                                            <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
-                                            <img :src="f.thumb" loading="lazy" alt="">
-                                            <span class="vbadge" x-show="f.type==='video'">▶</span>
-                                        </div>
-                                    </template>
-                                    <p class="muted" x-show="(files[s.id]||[]).length===0">Empty — add media or share the drop link.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </template>
-                    <p class="muted" x-show="p.sources.length===0">No scenes yet — add one.</p>
-                </div>
-
-            </section>
-        </template>
-        <p class="muted" x-show="projects.length===0">No projects yet.</p>
+            </template>
+            <p class="muted" x-show="projects.length===0">No projects yet — create one.</p>
+        </div>
     </main>
 
-    <!-- ===================== PLAYERS ===================== -->
-    <main x-show="tab==='players'" x-cloak>
-        <div class="newrow">
+    <!-- ===================== PLAYERS POOL ===================== -->
+    <main x-show="view==='players'" x-cloak>
+        <div class="page-head">
+            <h1>Players <span class="muted">· display surfaces</span></h1>
             <button class="primary" @click="createPlayer()"><span x-html="icon('plus')"></span> Player</button>
         </div>
 
         <template x-for="pl in players" :key="pl.id">
-            <section class="card" :id="'player-' + pl.id">
+            <section class="card">
                 <div class="card-head">
                     <div class="title-wrap">
                         <h2 x-text="pl.name"></h2>
                         <button class="iconbtn" title="Rename" @click="renamePlayer(pl)" x-html="icon('pencil')"></button>
                     </div>
                     <div class="actions">
+                        <button class="iconbtn" title="Share display URL" @click="openShare(playerUrl(pl), pl.name)" x-html="icon('share')"></button>
                         <button class="iconbtn danger" title="Delete player" @click="deletePlayer(pl)" x-html="icon('trash')"></button>
                     </div>
                 </div>
 
-                <div class="player-grid">
-                    <div class="player-share">
-                        <img class="qr" :src="qrPng(playerUrl(pl))" alt="QR" @click="openQr(playerUrl(pl), pl.name)">
-                        <a :href="playerUrl(pl)" target="_blank" x-text="playerUrl(pl)"></a>
-                        <button @click="copy(playerUrl(pl))"><span x-html="icon('copy')"></span> Copy link</button>
-                    </div>
+                <div class="player-config">
+                    <fieldset class="settings">
+                        <legend>Playback</legend>
+                        <label class="field inline"><span>Mode</span>
+                            <select x-model="pl.settings.playMode" @change="saveSettings(pl)">
+                                <option value="diaporama">diaporama (auto)</option>
+                                <option value="manual">manual (keypress)</option>
+                                <option value="midi">MIDI (trigger surface)</option>
+                            </select></label>
+                        <label class="field inline" x-show="pl.settings.playMode !== 'manual' && pl.settings.playMode !== 'midi'"><span>Duration (s)</span>
+                            <input type="number" min="1" step="1" x-model.number="pl.settings.imageDuration" @change="saveSettings(pl)"></label>
+                        <label class="field inline"><span>Loop</span>
+                            <select x-model="pl.settings.loop" @change="saveSettings(pl)"><option value="all">all media</option><option value="lastX">last X</option></select>
+                            <input class="xnum" type="number" min="1" step="1" x-show="pl.settings.loop==='lastX'" x-model.number="pl.settings.lastX" @change="saveSettings(pl)"></label>
+                        <label class="chk"><input type="checkbox" x-model="pl.settings.prioritizeFresh" @change="saveSettings(pl)"> prioritise fresh uploads</label>
+                    </fieldset>
 
-                    <div class="player-config">
-                        <div class="active-row">
-                            <span class="lbl">Active source</span>
-                            <select class="grow" @change="setActive(pl, $event.target.value)">
-                                <option value="" :selected="activeKey(pl)===''">— none —</option>
-                                <template x-for="opt in sourcesFor(pl)" :key="opt.key">
-                                    <option :value="opt.key" :selected="activeKey(pl)===opt.key" x-text="opt.label"></option>
-                                </template>
-                            </select>
-                            <button class="iconbtn" title="Attached projects" @click="editProjects[pl.id] = !editProjects[pl.id]" x-html="icon('gear')"></button>
+                    <fieldset class="settings">
+                        <legend>Surface / LED scaler</legend>
+                        <label class="field inline"><span>Container</span>
+                            <select x-model="pl.settings.scaler.container" @change="saveSettings(pl)"><option value="full">full screen</option><option value="custom">custom resolution</option></select></label>
+                        <div class="subgroup" x-show="pl.settings.scaler.container==='custom'" x-cloak>
+                            <div class="subtitle">Custom resolution — exact pixels on screen</div>
+                            <div class="row">
+                                <label class="field inline narrow"><span>W</span><input type="number" min="0" x-model.number="pl.settings.scaler.width" @change="saveSettings(pl)"></label>
+                                <label class="field inline narrow"><span>H</span><input type="number" min="0" x-model.number="pl.settings.scaler.height" @change="saveSettings(pl)"></label>
+                            </div>
+                            <div class="field"><span>Offset X</span><div class="radios">
+                                <label><input type="radio" :name="'px'+pl.id" value="left" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> left</label>
+                                <label><input type="radio" :name="'px'+pl.id" value="center" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> center</label>
+                                <label><input type="radio" :name="'px'+pl.id" value="right" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> right</label>
+                                <label><input type="radio" :name="'px'+pl.id" value="custom" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> px</label>
+                                <input class="xnum" type="number" x-show="pl.settings.scaler.posX==='custom'" x-model.number="pl.settings.scaler.offsetX" @change="saveSettings(pl)">
+                            </div></div>
+                            <div class="field"><span>Offset Y</span><div class="radios">
+                                <label><input type="radio" :name="'py'+pl.id" value="top" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> top</label>
+                                <label><input type="radio" :name="'py'+pl.id" value="center" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> center</label>
+                                <label><input type="radio" :name="'py'+pl.id" value="bottom" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> bottom</label>
+                                <label><input type="radio" :name="'py'+pl.id" value="custom" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> px</label>
+                                <input class="xnum" type="number" x-show="pl.settings.scaler.posY==='custom'" x-model.number="pl.settings.scaler.offsetY" @change="saveSettings(pl)">
+                            </div></div>
                         </div>
-                        <div class="proj-edit" x-show="editProjects[pl.id]" x-cloak>
-                            <span class="muted">Attach to:</span>
-                            <template x-for="p in projects" :key="p.id">
-                                <span class="badge-toggle" :class="{on: isAttached(pl, p.id)}" @click="toggleAttach(pl, p.id)" x-text="p.name"></span>
+                        <label class="field inline"><span>Fit</span>
+                            <select x-model="pl.settings.scaler.fit" @change="saveSettings(pl)"><option value="contain">contain</option><option value="cover">cover</option></select></label>
+                        <label class="field inline"><span>Rotation</span>
+                            <select x-model.number="pl.settings.scaler.rotation" @change="saveSettings(pl)"><option :value="0">0°</option><option :value="90">90°</option><option :value="180">180°</option><option :value="270">270°</option></select></label>
+                        <label class="chk"><input type="checkbox" x-model="pl.settings.scaler.evenLineSuppression" @change="saveSettings(pl)"> even-line squash (vertical 50%)</label>
+                    </fieldset>
+
+                    <fieldset class="settings" x-show="pl.settings.playMode==='midi'" x-cloak>
+                        <legend>Player-local MIDI</legend>
+                        <p class="muted hint">Controller plugged into the player screen. Map here or on the player (press <b>m</b>). Active scene: set it in a workspace.</p>
+                        <div class="midi-rows">
+                            <template x-for="t in transportTargets" :key="t.cmd">
+                                <div class="midi-row" @click="playerMidiLearn(pl,{type:'transport',cmd:t.cmd})" :title="'Learn: '+t.label"><button class="iconbtn" x-html="icon(t.icon)"></button><span class="mk" x-text="playerMidiKey(pl,{type:'transport',cmd:t.cmd})"></span></div>
                             </template>
-                            <span class="muted" x-show="projects.length===0">Create a project first.</span>
+                            <div class="midi-row" @click="playerMidiLearn(pl,{type:'blackout'})" title="Learn: Blackout"><button class="iconbtn">⬛</button><span class="mk" x-text="playerMidiKey(pl,{type:'blackout'})"></span></div>
                         </div>
-
-                        <div class="remote">
-                            <button class="iconbtn" title="Restart" @click="playerCommand(pl,'restart')" x-html="icon('restart')"></button>
-                            <button class="iconbtn" title="Previous" @click="playerCommand(pl,'prev')" x-html="icon('prev')"></button>
-                            <button class="iconbtn big" title="Play / Pause" @click="togglePause(pl)" x-html="icon(paused[pl.id] ? 'play' : 'pause')"></button>
-                            <button class="iconbtn" title="Next" @click="playerCommand(pl,'next')" x-html="icon('next')"></button>
-                            <button class="iconbtn" title="Reload playlist" @click="playerCommand(pl,'reload')" x-html="icon('reload')"></button>
-                            <span class="remote-hint">live remote</span>
+                        <div class="midi-tiles">
+                            <template x-for="f in (playerMidiMedia[pl.id]||[])" :key="f.name">
+                                <div class="midi-tile" @click="playerMidiLearn(pl,{type:'media',name:f.name})"><img :src="f.thumb" loading="lazy"><span class="mk" x-text="playerMidiKey(pl,{type:'media',name:f.name})"></span></div>
+                            </template>
+                            <span class="muted" x-show="!(playerMidiMedia[pl.id]||[]).length">Set this player's active scene (in a workspace) to map its clips.</span>
                         </div>
-
-                        <fieldset class="settings">
-                            <legend>Playback</legend>
-                            <label class="field inline">
-                                <span>Mode</span>
-                                <select x-model="pl.settings.playMode" @change="saveSettings(pl)">
-                                    <option value="diaporama">diaporama (auto)</option>
-                                    <option value="manual">manual (keypress)</option>
-                                    <option value="midi">MIDI (trigger surface)</option>
-                                </select>
-                            </label>
-                            <label class="field inline" x-show="pl.settings.playMode !== 'manual'">
-                                <span>Duration (s)</span>
-                                <input type="number" min="1" step="1" x-model.number="pl.settings.imageDuration" @change="saveSettings(pl)">
-                            </label>
-                            <label class="field inline">
-                                <span>Loop</span>
-                                <select x-model="pl.settings.loop" @change="saveSettings(pl)">
-                                    <option value="all">all media</option>
-                                    <option value="lastX">last X</option>
-                                </select>
-                                <input class="xnum" type="number" min="1" step="1" x-show="pl.settings.loop==='lastX'"
-                                       x-model.number="pl.settings.lastX" @change="saveSettings(pl)">
-                            </label>
-                            <label class="chk">
-                                <input type="checkbox" x-model="pl.settings.prioritizeFresh" @change="saveSettings(pl)">
-                                prioritise fresh uploads
-                            </label>
-                        </fieldset>
-
-                        <fieldset class="settings">
-                            <legend>Surface / LED scaler</legend>
-                            <label class="field inline">
-                                <span>Container</span>
-                                <select x-model="pl.settings.scaler.container" @change="saveSettings(pl)">
-                                    <option value="full">full screen</option>
-                                    <option value="custom">custom resolution</option>
-                                </select>
-                            </label>
-
-                            <div class="subgroup" x-show="pl.settings.scaler.container==='custom'" x-cloak>
-                                <div class="subtitle">Custom resolution — exact pixels on screen</div>
-                                <div class="row">
-                                    <label class="field inline narrow"><span>W</span>
-                                        <input type="number" min="0" x-model.number="pl.settings.scaler.width" @change="saveSettings(pl)"></label>
-                                    <label class="field inline narrow"><span>H</span>
-                                        <input type="number" min="0" x-model.number="pl.settings.scaler.height" @change="saveSettings(pl)"></label>
-                                </div>
-                                <div class="field">
-                                    <span>Offset X</span>
-                                    <div class="radios">
-                                        <label><input type="radio" :name="'px'+pl.id" value="left" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> left</label>
-                                        <label><input type="radio" :name="'px'+pl.id" value="center" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> center</label>
-                                        <label><input type="radio" :name="'px'+pl.id" value="right" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> right</label>
-                                        <label><input type="radio" :name="'px'+pl.id" value="custom" x-model="pl.settings.scaler.posX" @change="saveSettings(pl)"> px</label>
-                                        <input class="xnum" type="number" x-show="pl.settings.scaler.posX==='custom'" x-model.number="pl.settings.scaler.offsetX" @change="saveSettings(pl)">
-                                    </div>
-                                </div>
-                                <div class="field">
-                                    <span>Offset Y</span>
-                                    <div class="radios">
-                                        <label><input type="radio" :name="'py'+pl.id" value="top" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> top</label>
-                                        <label><input type="radio" :name="'py'+pl.id" value="center" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> center</label>
-                                        <label><input type="radio" :name="'py'+pl.id" value="bottom" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> bottom</label>
-                                        <label><input type="radio" :name="'py'+pl.id" value="custom" x-model="pl.settings.scaler.posY" @change="saveSettings(pl)"> px</label>
-                                        <input class="xnum" type="number" x-show="pl.settings.scaler.posY==='custom'" x-model.number="pl.settings.scaler.offsetY" @change="saveSettings(pl)">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <label class="field inline">
-                                <span>Fit</span>
-                                <select x-model="pl.settings.scaler.fit" @change="saveSettings(pl)">
-                                    <option value="contain">contain</option>
-                                    <option value="cover">cover</option>
-                                </select>
-                            </label>
-                            <label class="field inline">
-                                <span>Rotation</span>
-                                <select x-model.number="pl.settings.scaler.rotation" @change="saveSettings(pl)">
-                                    <option :value="0">0°</option><option :value="90">90°</option>
-                                    <option :value="180">180°</option><option :value="270">270°</option>
-                                </select>
-                            </label>
-                            <label class="chk">
-                                <input type="checkbox" x-model="pl.settings.scaler.evenLineSuppression" @change="saveSettings(pl)">
-                                even-line squash (vertical 50%)
-                            </label>
-                        </fieldset>
-
-                        <fieldset class="settings" x-show="pl.settings.playMode==='midi'" x-cloak>
-                            <legend>MIDI control</legend>
-                            <div class="midi-top">
-                                <span class="muted" x-text="midiBus ? (midiPorts.length ? ('in: ' + midiPorts.join(', ')) : 'no MIDI input on this machine') : 'use Learn / Live to enable Web MIDI here'"></span>
-                                <label class="chk"><input type="checkbox" :checked="midiLive===pl.id" @change="toggleMidiLive(pl)"> drive from my controller</label>
-                            </div>
-                            <p class="muted hint">Click a target then press a pad to map · or press <b>m</b> on the player screen.</p>
-                            <div class="midi-rows">
-                                <template x-for="t in transportTargets" :key="t.cmd">
-                                    <div class="midi-row" @click="midiLearn(pl,{type:'transport',cmd:t.cmd})" :title="'Learn: ' + t.label">
-                                        <button class="iconbtn" x-html="icon(t.icon)"></button>
-                                        <span class="mk" x-text="midiKeyLabel(pl,{type:'transport',cmd:t.cmd})"></span>
-                                    </div>
-                                </template>
-                                <div class="midi-row" @click="midiLearn(pl,{type:'blackout'})" title="Learn: Blackout">
-                                    <button class="iconbtn">⬛</button>
-                                    <span class="mk" x-text="midiKeyLabel(pl,{type:'blackout'})"></span>
-                                </div>
-                            </div>
-                            <div class="midi-tiles">
-                                <template x-for="f in (midiMedia[pl.id]||[])" :key="f.name">
-                                    <div class="midi-tile" @click="midiLearn(pl,{type:'media',name:f.name})">
-                                        <img :src="f.thumb" loading="lazy" alt="">
-                                        <span class="mk" x-text="midiKeyLabel(pl,{type:'media',name:f.name})"></span>
-                                    </div>
-                                </template>
-                                <span class="muted" x-show="!(midiMedia[pl.id]||[]).length">Set an active scene with media to map clips · <a @click="loadMidiMedia(pl)" style="cursor:pointer;color:var(--accent)">reload</a></span>
-                            </div>
-                        </fieldset>
-                    </div>
+                    </fieldset>
                 </div>
             </section>
         </template>
         <p class="muted" x-show="players.length===0">No players yet.</p>
     </main>
 
+    <!-- ===================== WORKSPACE ===================== -->
+    <main x-show="view==='workspace' && project()" x-cloak>
+        <template x-if="project()">
+            <div>
+                <div class="ws-head">
+                    <button class="iconbtn" title="Back" @click="goProjects()" x-html="icon('back')"></button>
+                    <h1 x-text="project().name"></h1>
+                    <button class="iconbtn" title="Rename" @click="renameProject(project())" x-html="icon('pencil')"></button>
+                    <span class="spacer"></span>
+                    <button class="iconbtn danger" title="Delete project" @click="deleteProject(project())" x-html="icon('trash')"></button>
+                </div>
+
+                <!-- LIVE CONTROL ROOM -->
+                <section class="control-room">
+                    <div class="cr-head">
+                        <h2>Live control</h2>
+                        <button class="learn-toggle" :class="{on: consoleLearn}" @click="toggleConsoleLearn()">
+                            <span x-html="icon('gear')"></span> <span x-text="consoleLearn ? 'MIDI learn — ON' : 'MIDI learn'"></span>
+                        </button>
+                        <span class="muted" x-text="midiPorts.length ? ('in: '+midiPorts.join(', ')) : ''"></span>
+                        <span class="spacer"></span>
+                        <select class="attach-sel" @change="attachPlayer(project(), $event.target.value); $event.target.value=''">
+                            <option value="">+ attach player…</option>
+                            <template x-for="pl in availablePlayers(project())" :key="pl.id"><option :value="pl.id" x-text="pl.name"></option></template>
+                        </select>
+                    </div>
+
+                    <div class="cr-cols">
+                        <template x-for="pl in attachedPlayers(project())" :key="pl.id">
+                            <div class="cr-col">
+                                <div class="cr-col-head">
+                                    <strong x-text="pl.name"></strong>
+                                    <button class="iconbtn" title="Open display" @click="openShare(playerUrl(pl), pl.name)" x-html="icon('share')"></button>
+                                    <button class="iconbtn danger" title="Detach" @click="detachPlayer(project(), pl)" x-html="icon('close')"></button>
+                                </div>
+                                <select class="mode-sel" x-model="pl.settings.playMode" @change="setMode(pl, $event.target.value)">
+                                    <option value="diaporama">diaporama (auto)</option>
+                                    <option value="manual">manual</option>
+                                    <option value="midi">MIDI</option>
+                                </select>
+                                <div class="cr-transport">
+                                    <button class="iconbtn" title="Restart" @click="transport(pl,'restart')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'restart'})}" x-html="icon('restart')"></button>
+                                    <button class="iconbtn" title="Prev" @click="transport(pl,'prev')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'prev'})}" x-html="icon('prev')"></button>
+                                    <button class="iconbtn" title="Play" @click="transport(pl,'play')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'play'})}" x-html="icon('play')"></button>
+                                    <button class="iconbtn" title="Pause" @click="transport(pl,'pause')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'pause'})}" x-html="icon('pause')"></button>
+                                    <button class="iconbtn" title="Next" @click="transport(pl,'next')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'next'})}" x-html="icon('next')"></button>
+                                    <button class="iconbtn" title="Blackout" @click="blackout(pl)" :class="{learned: consoleKey(pl.id,{type:'blackout'})}">⬛</button>
+                                </div>
+                                <div class="cr-scenes">
+                                    <template x-for="s in project().sources" :key="s.id">
+                                        <button class="scene-btn" :class="{active: isActiveScene(pl, project(), s), learned: consoleKey(pl.id,{type:'scene',sceneId:s.id})}" @click="playScene(project(), pl, s)">
+                                            <span x-show="isActiveScene(pl, project(), s)">▸ </span><span x-text="s.name"></span>
+                                            <span class="kbadge" x-show="consoleKey(pl.id,{type:'scene',sceneId:s.id})" x-text="consoleKey(pl.id,{type:'scene',sceneId:s.id})"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                                <template x-if="activeSceneOf(project(), pl)">
+                                    <div class="cr-clips">
+                                        <template x-for="f in filesOf(activeSceneOf(project(), pl))" :key="f.name">
+                                            <div class="cr-clip" :class="{learned: consoleKey(pl.id,{type:'media',sceneId:activeSceneOf(project(),pl).id,name:f.name})}" @click="playClip(project(), pl, activeSceneOf(project(),pl), f)">
+                                                <img :src="f.thumb" loading="lazy">
+                                                <span class="kbadge" x-show="consoleKey(pl.id,{type:'media',sceneId:activeSceneOf(project(),pl).id,name:f.name})" x-text="consoleKey(pl.id,{type:'media',sceneId:activeSceneOf(project(),pl).id,name:f.name})"></span>
+                                            </div>
+                                        </template>
+                                        <span class="muted" x-show="!filesOf(activeSceneOf(project(), pl)).length">empty scene</span>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <p class="muted" x-show="attachedPlayers(project()).length===0">No players attached — use “+ attach player”.</p>
+                    </div>
+                    <p class="muted hint" x-show="consoleLearn">Click a scene / clip / transport / blackout, then press a MIDI pad to bind it for that player.</p>
+                </section>
+
+                <!-- SCENES & MEDIA -->
+                <section class="ws-scenes">
+                    <div class="page-head">
+                        <h2>Scenes &amp; media</h2>
+                        <button @click="addScene(project())"><span x-html="icon('plus')"></span> Scene</button>
+                    </div>
+                    <div class="scenes" :data-scenes="project().id">
+                        <template x-for="(s, idx) in project().sources" :key="s.id">
+                            <div class="scene" :class="{dragging: isSceneDragging(project(),s)}" :data-sid="s.id" @dragover.prevent="sceneDragOver(project(),idx)" @drop.prevent>
+                                <div class="scene-head" @click="toggleExpand(project(),s)">
+                                    <span class="sidx" draggable="true" title="Drag to reorder" @click.stop @dragstart="sceneDragStart(project(),idx,$event)" @dragend="sceneDragEnd(project())" x-text="pad(idx+1)"></span>
+                                    <strong class="scene-name" x-text="s.name"></strong>
+                                    <button class="iconbtn" title="Rename scene" @click.stop="renameScene(project(),s)" x-html="icon('pencil')"></button>
+                                    <span class="typetoggle" @click.stop>
+                                        <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(project(),s)" title="Accept all">All</button>
+                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(project(),s,'image')" title="Images" x-html="icon('image')"></button>
+                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(project(),s,'video')" title="Videos" x-html="icon('video')"></button>
+                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(project(),s,'text')" title="Text" x-html="icon('text')"></button>
+                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(project(),s,'stream')" title="Camera stream" x-html="icon('stream')"></button>
+                                        <select class="streammode" x-show="s.accept && s.accept.stream" @change="setStreamMode(project(),s,$event.target.value)" title="When multiple streamers join">
+                                            <option value="replace" :selected="s.streamMode!=='grid'">single</option>
+                                            <option value="grid" :selected="s.streamMode==='grid'">grid</option>
+                                        </select>
+                                    </span>
+                                    <span class="spacer"></span>
+                                    <span class="count" x-text="s.count + (s.count===1?' file':' files')"></span>
+                                    <button class="iconbtn" title="Share" @click.stop="openShare(dropUrl(s), project().name + ' / ' + s.name)" x-html="icon('share')"></button>
+                                    <button class="iconbtn chev" :class="{open: expanded[s.id]}" x-html="icon('down')"></button>
+                                    <button class="iconbtn danger" title="Delete scene" @click.stop="deleteScene(project(),s)" x-html="icon('trash')"></button>
+                                </div>
+
+                                <div class="scene-body" x-show="expanded[s.id]" x-cloak>
+                                    <div class="grid-tools">
+                                        <button @click="addMedia(project(),s)"><span x-html="icon('plus')"></span> Add media</button>
+                                        <label class="chk small"><input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(project(),s)"> uploaders delete own</label>
+                                        <span class="muted" x-show="uploading[s.id]">uploading…</span>
+                                        <span class="spacer"></span>
+                                        <template x-if="selCount(s) > 0">
+                                            <span class="bulk">
+                                                <span class="muted" x-text="selCount(s)+' selected'"></span>
+                                                <button @click="bulk('archive',project(),s)"><span x-html="icon('archive')"></span> Archive</button>
+                                                <button class="danger" @click="bulk('delete',project(),s)"><span x-html="icon('trash')"></span> Delete</button>
+                                            </span>
+                                        </template>
+                                    </div>
+                                    <p class="muted hint" x-show="(files[s.id]||[]).length" x-text="selCount(s)>0 ? 'Click to select · drag to reorder' : 'Click to preview · drag to reorder'"></p>
+                                    <div class="grid" :data-grid="s.id">
+                                        <template x-for="(f, idx) in filesOf(s)" :key="f.name">
+                                            <div class="tile" :class="{sel: isSel(s,f.name), dragging: isDragging(s,f)}" :data-name="f.name" draggable="true"
+                                                 @dragstart="mediaDragStart(s,idx,$event)" @dragover.prevent="mediaDragOver(s,idx)" @drop.prevent @dragend="mediaDragEnd(project(),s)" @click="tileClick(s,idx)">
+                                                <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
+                                                <img :src="f.thumb" loading="lazy" alt="">
+                                                <span class="vbadge" x-show="f.type==='video'">▶</span>
+                                            </div>
+                                        </template>
+                                        <p class="muted" x-show="(files[s.id]||[]).length===0">Empty — add media or share the drop link.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                        <p class="muted" x-show="project().sources.length===0">No scenes yet — add one.</p>
+                    </div>
+                </section>
+            </div>
+        </template>
+    </main>
+
+    <!-- ===================== SHARE MODAL ===================== -->
+    <div class="modal" x-show="share.open" x-cloak @click="closeShare()">
+        <div class="modal-box share-box" @click.stop>
+            <h3 x-text="share.title"></h3>
+            <img class="qr-big" :src="qrPng(share.url)" alt="QR">
+            <p class="muted urlbreak" x-text="share.url"></p>
+            <div class="row">
+                <button @click="copyText(share.url)"><span x-html="icon('copy')"></span> Copy link</button>
+                <a class="btn" :href="share.url" target="_blank"><span x-html="icon('open')"></span> Open</a>
+                <button @click="copyImage(share.url)"><span x-html="icon('copy')"></span> Copy QR</button>
+                <button @click="downloadImage(share.url, share.title)"><span x-html="icon('download')"></span> Download QR</button>
+                <button @click="closeShare()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ===================== LIGHTBOX ===================== -->
     <div class="lb" x-show="lightbox.open" x-cloak @click="lbClose()">
         <button class="iconbtn lb-nav" @click.stop="lbPrev()" x-html="icon('left')"></button>
         <div class="lb-stage" @click.stop>
-            <template x-if="lbCurrent() && lbCurrent().type==='image'">
-                <img :src="lbCurrent().url" alt="">
-            </template>
-            <template x-if="lbCurrent() && lbCurrent().type==='video'">
-                <video :src="lbCurrent().url" controls autoplay loop></video>
-            </template>
+            <template x-if="lbCurrent() && lbCurrent().type==='image'"><img :src="lbCurrent().url" alt=""></template>
+            <template x-if="lbCurrent() && lbCurrent().type==='video'"><video :src="lbCurrent().url" controls autoplay loop></video></template>
         </div>
         <button class="iconbtn lb-nav" @click.stop="lbNext()" x-html="icon('right')"></button>
         <button class="iconbtn lb-close" @click.stop="lbClose()" x-html="icon('close')"></button>
-    </div>
-
-    <!-- ===================== QR MODAL ===================== -->
-    <div class="modal" x-show="qr.open" x-cloak @click="closeQr()">
-        <div class="modal-box qr-box" @click.stop>
-            <h3 x-text="qr.title"></h3>
-            <img class="qr-big" :src="qrPng(qr.url)" alt="QR">
-            <p class="muted urlbreak" x-text="qr.url"></p>
-            <div class="row">
-                <button @click="copyQrImage()"><span x-html="icon('copy')"></span> Copy image</button>
-                <button @click="downloadQr()"><span x-html="icon('download')"></span> Download</button>
-                <button @click="closeQr()">Close</button>
-            </div>
-        </div>
     </div>
 
 </div>
