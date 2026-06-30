@@ -34,6 +34,7 @@
     let current = null;
     let timer = null;
     let rafId = null;
+    let paused = false;
     // camera takeover
     let receiver = null;
     let streaming = false;
@@ -68,6 +69,9 @@
         if (cmd === 'next') next();
         else if (cmd === 'prev') prev();
         else if (cmd === 'reload') reload();
+        else if (cmd === 'pause') pause();
+        else if (cmd === 'play') play();
+        else if (cmd === 'restart') restart();
     });
 
     function setStatus(msg) {
@@ -102,6 +106,7 @@
 
     function start() {
         clearTimers();
+        paused = false;
         playingFresh = false;
         index = 0;
         if (!queue.length && !fresh.length) { setStatus('No media'); clearCanvas(); return; }
@@ -142,6 +147,29 @@
             .catch(() => { index = 0; if (queue.length) show(queue[0]); });
     }
 
+    // ---- transport (admin remote) ----
+    function pause() {
+        if (streaming) return;
+        paused = true;
+        clearTimers();
+        if (current && current.type === 'video') video.pause();
+    }
+    function play() {
+        if (streaming || !paused) return;
+        paused = false;
+        if (!current) { start(); return; }
+        if (current.type === 'video') { const p = video.play(); if (p && p.catch) p.catch(() => {}); }
+        else scheduleNext();
+    }
+    function restart() {
+        if (streaming) return;
+        paused = false;
+        clearTimers();
+        if (!queue.length) { reloadPlaylist(); return; }
+        index = 0;
+        show(queue[0]);
+    }
+
     function show(item) {
         current = item;
         setStatus('');
@@ -161,10 +189,12 @@
             video.currentTime = 0;
             const p = video.play();
             if (p && p.catch) p.catch(() => {});
+            if (paused) video.pause();
         }
     }
 
     function scheduleNext() {
+        if (paused) return;
         if (settings.playMode === 'diaporama') timer = setTimeout(next, Math.max(1, settings.imageDuration) * 1000);
     }
     function clearTimers() { if (timer) { clearTimeout(timer); timer = null; } }

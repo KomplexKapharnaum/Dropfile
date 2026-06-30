@@ -203,6 +203,15 @@
                             <span class="muted" x-show="projects.length===0">Create a project first.</span>
                         </div>
 
+                        <div class="remote">
+                            <button class="iconbtn" title="Restart" @click="playerCommand(pl,'restart')" x-html="icon('restart')"></button>
+                            <button class="iconbtn" title="Previous" @click="playerCommand(pl,'prev')" x-html="icon('prev')"></button>
+                            <button class="iconbtn big" title="Play / Pause" @click="togglePause(pl)" x-html="icon(paused[pl.id] ? 'play' : 'pause')"></button>
+                            <button class="iconbtn" title="Next" @click="playerCommand(pl,'next')" x-html="icon('next')"></button>
+                            <button class="iconbtn" title="Reload playlist" @click="playerCommand(pl,'reload')" x-html="icon('reload')"></button>
+                            <span class="remote-hint">live remote</span>
+                        </div>
+
                         <fieldset class="settings">
                             <legend>Playback</legend>
                             <label class="field inline">

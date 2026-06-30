@@ -421,5 +421,16 @@ module.exports = function (ctx) {
         res.json({ player: serializePlayer(pl) });
     });
 
+    // playback remote: push a transport command to the live player(s)
+    const COMMANDS = ['next', 'prev', 'reload', 'pause', 'play', 'restart'];
+    api.post('/players/:id/command', (req, res) => {
+        const pl = store.data.players[req.params.id];
+        if (!pl) return res.status(404).json({ error: 'not found' });
+        const cmd = String(req.body.cmd || '');
+        if (!COMMANDS.includes(cmd)) return res.status(400).json({ error: 'unknown command' });
+        io.to('player:' + pl.token).emit('command', cmd);
+        res.json({ ok: true });
+    });
+
     return { api, page: express.static(path.join(__dirname, '..', 'www', 'admin')) };
 };
