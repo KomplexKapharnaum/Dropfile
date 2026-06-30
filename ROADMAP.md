@@ -4,14 +4,20 @@ Turns Dropfile from a file-drop tool into a media controller: a **pool of Player
 
 ## Status (implemented on `media-controller`, deployed at drop.kxkm.net)
 
-- **Phase 1 — core** ✅ projects, players pool, scenes (public/private), integrated browser (thumbnails, ordering, bulk delete/archive), blind drop, LED scaler (exact-pixel custom resolution, even-line = vertical-50 % squash, position/fit/rotation), live settings, restart-resume.
-- **Phase 2 — camera takeover** ✅ *code* — `stream` is a scene accept-type; *Go live* on the drop page; mesh WebRTC (streamers offer, players answer); player renders single/grid; live takes over & reverts; active-stream audio. **Needs coturn reachable** — verify at `/diag` (as of last test `turn.kxkm.net` was unreachable on 3478/5349 from outside the LAN).
-- **Phase 3 — MIDI** ✅ player `playMode: midi` (trigger surface); learn on the player (`m`) and in the admin; map note/CC → media / transport / blackout; admin "drive from my controller".
+- **Phase 1 — core** ✅ projects, players pool, scenes, integrated browser (thumbnails, ordering, bulk delete/archive), blind drop, LED scaler (exact-pixel custom resolution, even-line = vertical-50 % squash, position/fit/rotation), live settings, restart-resume.
+- **Phase 2 — camera takeover** ✅ *code* — `stream` is a scene accept-type; *Go live* on the drop page; mesh WebRTC (streamers offer, players answer); player renders single/grid; live takes over & reverts; active-stream audio. **Needs coturn reachable** — verify at `/diag` (as of last test `turn.kxkm.net` was unreachable on 3478/5349 from outside the LAN). *This is the one feature that is code-complete but not yet verified live.*
+- **Phase 3 — MIDI** ✅ learn on the player (`m`) and in the admin; map note/CC → select a clip / transport / blackout; a workspace "console" drives any player from one controller. (The original `playMode: midi` trigger-surface was folded into the live **diaporama / manual-select** model — MIDI is now a binding layer over either; see Phase 4.)
+- **Phase 4 — workspaces & control room** ✅ admin reorganised into a **Projects** grid → a per-project **workspace**: a live **control room** (one column per attached player — pick a scene, click a clip, transport + blackout, live player-status feedback, per-workspace console MIDI learn) above a scenes & media manager. The drop page became a **KXKM chat** composer (message / attach / *Go live*) that adapts to each scene's accept-types.
 - **Extras** ✅ text drop (`.txt`), admin playback remote, `/diag` WebRTC tester.
 
-A few names shifted from the original plan below: *sources* are called **scenes**;
-camera takeover is the scene accept-type **`stream`** (not a separate `/cam` URL);
-MIDI is **`playMode: midi`** (not a `sourceMode`).
+A few names shifted from the original plan below: *sources* are called **scenes**
+(each reachable by its own shareable URL — no public/private flag); camera takeover
+is the scene accept-type **`stream`** (not a separate `/cam` URL); the live admin
+loop now centres on a project **workspace / control room**. The server also split
+into an **`app.js`** factory (wiring) + a thin **`server.js`** (listen), and gained
+**`lib/model.js`** (store queries) and **`lib/playlist.js`** (active-source → playlist) —
+the *New mental model*, *Data model*, *Server restructure* and *Front-end* sections
+below are the original plan; see Phase 4 at the bottom for the as-built shape.
 
 ## Context — why this change
 
@@ -67,9 +73,15 @@ Projects  (content grouping)
     "<projectId>": {
       "id", "name", "slug",            // slug = folder under UPLOAD_PATH
       "createdAt",
-      "sources": {
-        "<sourceId>": { "id", "type": "drop|preloaded", "name", "folder",
-                        "dropToken", "allowSelfDelete" }
+      "sceneOrder": [ "<sourceId>", ... ],                    // explicit scene order
+      "console": { "map": { "<midiKey>": { "playerId", "action" } } }, // workspace operator desk
+      "sources": {                     // "scenes"
+        "<sourceId>": { "id", "name", "folder",
+                        "dropToken",                          // every scene is URL-shared
+                        "allowSelfDelete",
+                        "accept": { "image", "video", "text", "stream" },
+                        "streamMode": "replace|grid",
+                        "order": [ "<filename>", ... ] }      // explicit media order
       }
     }
   },
@@ -79,17 +91,20 @@ Projects  (content grouping)
       "createdAt",
       "projectIds": [...],             // CANONICAL many-to-many attach list
       "activeProjectId", "activeSourceId",
+      "selectedName",                  // clip held in manual mode (resumes after restart)
       "settings": {
         "playMode": "diaporama|manual", "imageDuration", "loop": "all|lastX", "lastX",
         "prioritizeFresh": true,
         "scaler": { "container": "full|custom", "width", "height",
                     "fit": "contain|cover",
-                    "hPosition", "hOffset", "vPosition", "vOffset",
-                    "rotation", "evenLineSuppression" }
+                    "posX": "left|center|right|custom", "offsetX",
+                    "posY": "top|center|bottom|custom", "offsetY",
+                    "rotation", "evenLineSuppression" },
+        "midi": { "map": { "<midiKey>": { "type": "media|transport|blackout", ... } } }
       }
     }
   },
-  "uploads": {                         // blind-box "my uploads" view
+  "uploads": {                         // blind-box "my uploads" manifest (per scene)
     "<sourceId>": { "<fileId>": { "filename", "uploaderToken", "nick", "time", "type" } }
   }
 }
@@ -138,19 +153,25 @@ Listings exclude names starting with `_`/`.`, so `_archive` and `.thumbs` are fi
 
 ## Server restructure
 
+*As built (the plan below merged the factory + listener into one `server.js`; it
+was split for testability, and `model`/`playlist` were extracted):*
+
 ```
-server.js            # wiring: app, http, io, mount routers, start, load store
-lib/store.js         # atomic JSON store
+app.js               # build() — wires Express app + HTTP + Socket.IO (importable factory)
+server.js            # loads app, listens on FRONTEND_PORT
+lib/store.js         # atomic JSON store (db.json)
 lib/ids.js           # id/token (crypto) + slug helpers
-lib/media.js         # ext detection, mtime listing, sanitize helpers
+lib/media.js         # ext detection, mtime listing, ordering, sanitize helpers
+lib/model.js         # store queries (find by token, source dir, project↔players)
+lib/playlist.js      # resolve a player's active source → media playlist
 lib/thumbs.js        # sharp + ffmpeg thumbnail cache (sha-keyed)
 lib/auth.js          # Basic-auth middleware (ADMIN_PASSWORD)
 lib/turn.js          # WebRTC ICE: short-lived coturn creds (use-auth-secret)
-lib/migrate.js       # one-time import of existing folders → projects
-routes/drop.js       # /d, /api/drop/*
-routes/player.js     # /p, /api/player/*
-routes/admin.js      # /admin, /api/admin/* (behind auth)
-sockets/index.js     # connection, player rooms, settings/active broadcast
+lib/migrate.js       # first-boot folder import + idempotent store upgrades
+routes/drop.js       # /d, /api/drop/* (upload, text, blind "my uploads")
+routes/player.js     # /p, /api/player/*, /diag, /api/ice
+routes/admin.js      # /admin/api/* + static admin SPA (behind Basic auth)
+sockets/index.js     # player rooms, live status feedback, WebRTC stream signaling
 ```
 
 **Remove:** `filebrowser` spawn + `express-http-proxy` + `filebrowser.db` (replaced by integrated browser); drop `body-parser` for built-in `express.json`/`urlencoded`.
@@ -161,15 +182,18 @@ sockets/index.js     # connection, player rooms, settings/active broadcast
 
 ```
 www/
-  drop.html  + drop.js     # blind drop box (Dropzone multi-upload) + "my uploads" manager
-  player.html+ player.js   # canvas compositor + diaporama engine
-  admin/index.html + admin.js  # Alpine: projects, sources, browser, player pool, settings, QR
+  drop.html  + drop.js         # KXKM chat composer (text / attach / Go live) + "my messages"
+  player.html+ player.js       # canvas compositor + diaporama/manual engine + MIDI
+  receiver.js + camera.js      # WebRTC player-side receiver + drop-side camera sender
+  midi.js                      # shared Web MIDI bus (player + admin)
+  diag.html                    # WebRTC Trickle-ICE tester
+  admin/index.html + admin.js  # Alpine SPA: Projects grid · Players pool · Workspace (control room)
 ```
 
-- **Drop page** — Dropzone multi-upload; QR/share; "my uploads" grid with delete (visitor cookie token); never lists others' media.
-- **Player engine** — joins `player:<token>`, fetches config + playlist, renders every frame through a `<canvas>` compositor for pixel-accurate LED scaling, hot-applies `settings`/`active-change` live, supports `diaporama` and `manual`, resumes active source on reconnect/restart.
+- **Drop page** — **KXKM chat**: a composer that adapts to the scene's accept-types (message box / media attach / *Go live*); the timeline shows only *your own* contributions; delete your own (visitor token); never lists others' media.
+- **Player engine** — joins `player:<token>`, fetches config + playlist, renders every frame through a `<canvas>` compositor for pixel-accurate LED scaling, hot-applies `settings`/`active-change` live, supports `diaporama` and `manual`, reports live status back to the control room, resumes active source on reconnect/restart.
 - **Canvas compositor** — forced output resolution, `fit` contain/cover, h/v position+offset, rotation, and **even-line suppression** (draw only odd output rows).
-- **Admin** — Alpine panels: Projects (sources + integrated browser with thumbnail grid, sort by upload date, bulk delete/archive); Players pool (attach both directions, set active source, settings form incl. full scaler block, display QR).
+- **Admin** — Alpine SPA, three views: a **Projects** grid → a per-project **workspace** (a live **control room** — one column per attached player: scene buttons, clip thumbnails, transport, blackout, live status, console MIDI learn — above a scenes & media manager with thumbnail grid, drag-reorder, and a bulk delete/archive media modal); and a **Players** pool page (per-screen scaler / auto-play / local-MIDI config + display QR).
 
 ## Dependencies
 
@@ -205,3 +229,33 @@ Scan `UPLOAD_PATH`; for each existing valid top-level dir create a project with 
 Web MIDI on the player; **learn mode** (incoming note/CC → media index) stored per player; manual selection via controller (e.g. Korg nanoKONTROL). `sourceMode: midi` over a folder source.
 
 **Built as:** a player **`playMode: midi`** (trigger surface — holds the triggered clip, no auto-advance). A shared `www/midi.js` runs on **both** the player and the admin (Web MIDI). Mappings (`settings.midi.map`, key `note:ch:d1` / `cc:ch:d1`) bind to one of: **select a media**, **transport** (next/prev/play/pause/restart/reload), or **blackout** (toggled in the canvas compositor). Learn happens on the player screen (press `m`) or in the admin's per-player MIDI panel; the admin also has a **"drive from my controller"** toggle that dispatches mapped pad presses to the player via the command channel. Map persists via `PUT /admin/api/players/:id/midi` (admin) and `PUT /api/player/:token/midi` (player), kept separate from the general settings PUT so neither clobbers the other.
+
+> Superseded by Phase 4: there is no longer a `playMode: midi`. Play mode is
+> `diaporama | manual`, switched live from the control room (auto-play vs select);
+> MIDI is a **binding layer** over either, both player-local (`settings.midi.map`)
+> and at the workspace console (`project.console.map`).
+
+## Phase 4 — Workspaces, control room & chat drop
+
+The admin collapsed from per-entity pages into a **task-oriented** shape.
+
+- **Projects grid** (landing) → open one into a **workspace**.
+- **Workspace = live control room + content manager.** The control room shows one
+  **column per attached player**: a live status line (fed back over Socket.IO via
+  `player-status` → the `admins` room), scene buttons, the active scene's clip
+  thumbnails, transport (restart/prev/pause/next), an **auto-play** toggle
+  (diaporama) with its duration/loop/fresh options, and **blackout**. Clicking a
+  scene re-points that player live; clicking a clip sets **manual** mode and holds
+  it (`selectedName`). Below it, a **scenes & media** manager: drag-reorder scenes
+  and media, per-scene accept-type chips (`image`/`video`/`text`/`stream` + single/grid
+  stream mode), bulk delete/archive in a media modal.
+- **Operator console MIDI** is per-workspace (`project.console.map`): MIDI-learn a pad
+  to any player's scene / clip / transport / blackout, then drive the whole desk from
+  one controller. This replaced the Phase-3 `playMode: midi` trigger surface; a player
+  still keeps its own local MIDI map (`settings.midi.map`).
+- **Players pool** stays a separate top-level page for per-screen config (scaler,
+  auto-play defaults, local MIDI, display QR).
+- **Drop page → KXKM chat.** The blind drop became a chat-style composer that adapts
+  to the scene's accept-types: a message box (text → `.txt`), a media attach button,
+  and/or **Go live** (camera). The timeline shows only the visitor's own contributions;
+  a hook is left in `drop.js` for future operator → audience broadcast messages.

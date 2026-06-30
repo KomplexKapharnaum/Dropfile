@@ -19,15 +19,17 @@ Dropfile turns drop-folders and displays into a small **media controller**:
 - **Content types** — each scene picks what it accepts: **images**, **videos**,
   **text** (saved as `.txt`), and/or a live **camera stream**. The drop page is a
   **KXKM chat** that adapts: a message box, a media attach button, and/or *Go live*.
-- **Player modes** — *diaporama* (auto-advance), *manual* (keypress), or *MIDI*
-  (a controller triggers clips — a hold/trigger surface). A live **camera
-  takeover** overrides the playlist while anyone streams and reverts when they
-  stop. Admins also have a live playback remote (prev/next/play-pause/restart).
+- **Player modes** — *diaporama* (auto-advance) or *manual* (a held clip), switched
+  live from the control room. A **MIDI** controller and the admin playback remote
+  (prev/next/play-pause/restart/blackout) drive either mode as control surfaces. A
+  live **camera takeover** overrides the playlist while anyone streams and reverts
+  when they stop.
 
 Admin changes are pushed live to every open player over WebSocket.
 
-See [ROADMAP.md](ROADMAP.md) for the full design. Phases 1–3 (core, WebRTC
-camera takeover, MIDI source) are implemented.
+See [ROADMAP.md](ROADMAP.md) for the full design and status. Phases 1–4 (core,
+WebRTC camera takeover, MIDI, workspaces/control-room) are implemented — the WebRTC
+camera takeover is code-complete but still needs a reachable coturn, verified at `/diag`.
 
 ## Requirements
 
