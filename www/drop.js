@@ -1,164 +1,139 @@
-// Blind drop box. Uploaders see only their own uploads (tracked by a local
-// visitor token). They never see anyone else's media. What's accepted (images /
-// videos / text) is decided per scene by the admin.
+// KXKM chat-style drop box. Send text / photos / video, or go live with the
+// camera. The timeline shows only what *you* sent (each device tracked by a
+// local visitor id). A hook is left for future server-broadcast messages.
 (function () {
     const token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
 
+    // device identity + remembered nick (cookie)
     let visitor = localStorage.getItem('df_visitor');
-    if (!visitor) {
-        visitor = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
-        localStorage.setItem('df_visitor', visitor);
-    }
-    const nick = () => localStorage.getItem('df_nick') || 'anon';
+    if (!visitor) { visitor = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now()); localStorage.setItem('df_visitor', visitor); }
+    function getCookie(n) { return (document.cookie.split('; ').find(c => c.startsWith(n + '=')) || '').split('=')[1] || ''; }
+    function setCookie(n, v) { document.cookie = n + '=' + encodeURIComponent(v) + ';path=/;max-age=' + (3600 * 24 * 365); }
+    let nick = decodeURIComponent(getCookie('df_nick') || '');
 
-    const nickInput = document.getElementById('nick');
-    nickInput.value = localStorage.getItem('df_nick') || '';
-    nickInput.addEventListener('input', () => {
-        const v = nickInput.value.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
-        nickInput.value = v;
-        localStorage.setItem('df_nick', v);
-    });
-
+    const $ = id => document.getElementById(id);
+    const timeline = $('timeline');
+    let accept = { image: true, video: true, text: false, stream: false };
     let allowSelfDelete = false;
     let ICE = [];
     let sender = null;
-    Dropzone.autoDiscover = false;
 
-    // drop metadata: titles (project = main, scene = subtitle) + accepted types
+    // ---- nickname ----
+    function showNick(force) {
+        $('nickField').value = nick || '';
+        $('nickModal').classList.remove('hidden');
+        $('nickField').focus();
+        $('nickModal').dataset.force = force ? '1' : '';
+    }
+    function saveNick() {
+        const v = $('nickField').value.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
+        if (v.length < 2) { $('nickField').focus(); return; }
+        nick = v; setCookie('df_nick', v);
+        $('nickName').textContent = nick;
+        $('nickModal').classList.add('hidden');
+    }
+    $('nickSave').onclick = saveNick;
+    $('nickField').addEventListener('keydown', e => { if (e.key === 'Enter') saveNick(); });
+    $('nickBtn').onclick = () => showNick(false);
+
+    // ---- meta ----
     fetch('/api/drop/' + token).then(r => r.ok ? r.json() : Promise.reject()).then(info => {
-        document.getElementById('projTitle').textContent = info.project || 'Drop';
-        document.getElementById('sceneTitle').textContent = info.source || '';
-        document.title = (info.project || 'Drop') + (info.source ? ' · ' + info.source : '');
+        $('sub').textContent = (info.project || '') + (info.source ? ' · ' + info.source : '');
+        accept = info.accept || accept;
         allowSelfDelete = info.allowSelfDelete;
         ICE = info.ice || [];
-        setupUI(info.accept || { image: true, video: true, text: false, stream: false });
-    }).catch(() => {
-        document.getElementById('projTitle').textContent = 'Unknown drop';
-    });
+        setupComposer();
+        if (!nick) showNick(true); else $('nickName').textContent = nick;
+        loadMine();
+    }).catch(() => { $('sub').textContent = 'unknown'; });
 
-    function setupUI(accept) {
-        const mediaTypes = [];
-        if (accept.image) mediaTypes.push('image/*');
-        if (accept.video) mediaTypes.push('video/*');
-
-        const dzEl = document.getElementById('dz');
-        if (mediaTypes.length) {
-            dzEl.classList.remove('hidden');
-            const dz = new Dropzone('#dz', {
-                url: '/api/drop/' + token,
-                paramName: 'file',
-                maxFilesize: 4096,
-                parallelUploads: 3,
-                timeout: 0,
-                acceptedFiles: mediaTypes.join(','),
-                dictDefaultMessage: dropMessage(accept),
-                sending: (file, xhr, formData) => { formData.append('nick', nick()); formData.append('visitor', visitor); }
-            });
-            dz.on('success', (file) => { dz.removeFile(file); loadMine(); });
-            dz.on('queuecomplete', loadMine);
+    function setupComposer() {
+        if (!accept.text) { $('textInput').classList.add('hidden'); $('sendBtn').classList.add('hidden'); }
+        if (!(accept.image || accept.video)) $('attachBtn').classList.add('hidden');
+        else {
+            const types = []; if (accept.image) types.push('image/*'); if (accept.video) types.push('video/*');
+            $('fileInput').setAttribute('accept', types.join(','));
         }
-
-        if (accept.text) {
-            document.getElementById('textBox').classList.remove('hidden');
-            document.getElementById('sendText').onclick = sendText;
-        }
-
-        if (accept.stream) {
-            const goLive = document.getElementById('goLive');
-            goLive.classList.remove('hidden');
-            goLive.onclick = startCamera;
-        }
+        if (accept.stream) $('liveBtn').classList.remove('hidden');
     }
 
-    function startCamera() {
-        document.getElementById('camOverlay').classList.remove('hidden');
-        const status = document.getElementById('camStatus');
-        sender = new CameraSender({
-            token, ice: ICE,
-            getNick: () => localStorage.getItem('df_nick') || 'anon',
-            preview: document.getElementById('camPreview'),
-            onStatus: (s) => { status.textContent = s; }
-        });
-        sender.start().catch(e => { status.textContent = 'Camera error: ' + (e.message || e); });
-        document.getElementById('camFlip').onclick = () => sender && sender.flip().catch(() => {});
-        document.getElementById('camStop').onclick = stopCamera;
-    }
+    // ---- send ----
+    $('composer').addEventListener('submit', e => { e.preventDefault(); sendText(); });
+    $('attachBtn').onclick = () => requireNick(() => $('fileInput').click());
+    $('fileInput').addEventListener('change', e => { const files = [...e.target.files]; e.target.value = ''; uploadFiles(files); });
+    $('liveBtn').onclick = () => requireNick(startCamera);
 
-    function stopCamera() {
-        if (sender) { sender.stop(); sender = null; }
-        document.getElementById('camOverlay').classList.add('hidden');
-    }
-
-    function dropMessage(accept) {
-        if (accept.image && accept.video) return '📷  Tap or drop photos / videos';
-        if (accept.image) return '📷  Tap or drop your photos';
-        if (accept.video) return '🎬  Tap or drop your videos';
-        return 'Drop files';
-    }
+    function requireNick(fn) { if (!nick) { showNick(true); } else fn(); }
 
     function sendText() {
-        const ta = document.getElementById('textInput');
-        const text = ta.value.trim();
+        const ta = $('textInput'); const text = ta.value.trim();
         if (!text) return;
-        fetch('/api/drop/' + token + '/text', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, nick: nick(), visitor })
-        }).then(r => r.ok ? r.json() : Promise.reject()).then(() => { ta.value = ''; loadMine(); }).catch(() => {});
+        if (!nick) return showNick(true);
+        ta.value = '';
+        fetch('/api/drop/' + token + '/text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, nick, visitor }) })
+            .then(r => r.ok ? r.json() : Promise.reject()).then(loadMine).catch(() => {});
     }
 
-    // my uploads
-    const grid = document.getElementById('mineGrid');
-    const hint = document.getElementById('mineHint');
+    function uploadFiles(files) {
+        if (!files.length || !nick) { if (!nick) showNick(true); return; }
+        let i = 0;
+        const next = () => {
+            if (i >= files.length) return loadMine();
+            const fd = new FormData();
+            fd.append('file', files[i]); fd.append('nick', nick); fd.append('visitor', visitor);
+            fetch('/api/drop/' + token, { method: 'POST', body: fd }).then(() => { i++; loadMine(); next(); }).catch(() => { i++; next(); });
+        };
+        next();
+    }
 
+    function removeMsg(fileId) {
+        fetch('/api/drop/' + token + '/' + fileId + '?visitor=' + encodeURIComponent(visitor), { method: 'DELETE' }).then(loadMine);
+    }
+
+    // ---- timeline ----
     function loadMine() {
         fetch('/api/drop/' + token + '/mine?visitor=' + encodeURIComponent(visitor))
             .then(r => r.json())
-            .then(data => { allowSelfDelete = data.allowSelfDelete; render(data.uploads || []); })
+            .then(data => { allowSelfDelete = data.allowSelfDelete; render((data.uploads || []).slice().sort((a, b) => a.time - b.time)); })
             .catch(() => {});
     }
 
     function render(items) {
-        grid.innerHTML = '';
-        hint.textContent = items.length ? '(' + items.length + ')' : '';
-        items.forEach(u => {
-            const tile = document.createElement('div');
-            tile.className = 'tile';
-            if (u.type === 'image') {
-                const img = document.createElement('img');
-                img.src = u.url; img.loading = 'lazy';
-                tile.appendChild(img);
-            } else {
-                const ph = document.createElement('div');
-                ph.className = 'placeholder';
-                ph.textContent = u.type === 'video' ? '▶' : (u.type === 'text' ? '📝' : '📄');
-                tile.appendChild(ph);
-            }
-            if (allowSelfDelete) {
-                const del = document.createElement('button');
-                del.className = 'del'; del.textContent = '×';
-                del.onclick = () => removeUpload(u.fileId);
-                tile.appendChild(del);
-            }
-            grid.appendChild(tile);
-        });
+        const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 80;
+        timeline.innerHTML = '';
+        items.forEach(u => timeline.appendChild(bubble(u)));
+        if (atBottom || true) timeline.scrollTop = timeline.scrollHeight;
     }
 
-    function removeUpload(fileId) {
-        fetch('/api/drop/' + token + '/' + fileId + '?visitor=' + encodeURIComponent(visitor), { method: 'DELETE' })
-            .then(loadMine);
+    function bubble(u) {
+        const wrap = document.createElement('div');
+        wrap.className = 'msg me';
+        const body = document.createElement('div'); body.className = 'msg-body';
+        if (u.type === 'image') { const img = document.createElement('img'); img.src = u.url; img.loading = 'lazy'; body.appendChild(img); }
+        else if (u.type === 'video') { const v = document.createElement('video'); v.src = u.url; v.controls = true; v.playsInline = true; body.appendChild(v); }
+        else if (u.type === 'text') { body.classList.add('text'); fetch(u.url).then(r => r.text()).then(t => { body.textContent = t; }).catch(() => { body.textContent = '(text)'; }); }
+        else { body.classList.add('text'); body.textContent = u.name; }
+        wrap.appendChild(body);
+
+        const meta = document.createElement('div'); meta.className = 'msg-meta';
+        meta.textContent = fmtTime(u.time);
+        if (allowSelfDelete) { const del = document.createElement('button'); del.className = 'msg-del'; del.textContent = 'delete'; del.onclick = () => removeMsg(u.fileId); meta.appendChild(del); }
+        wrap.appendChild(meta);
+        return wrap;
     }
 
-    // share modal with QR of this drop URL
-    const shareModal = document.getElementById('shareModal');
-    const shareUrl = location.href;
-    document.getElementById('shareBtn').onclick = () => {
-        shareModal.classList.remove('hidden');
-        document.getElementById('shareUrl').textContent = shareUrl;
-        QRCode.toCanvas(document.getElementById('qr'), shareUrl, { width: 240, margin: 1 });
-    };
-    document.getElementById('closeShare').onclick = () => shareModal.classList.add('hidden');
-    document.getElementById('copyBtn').onclick = () => navigator.clipboard.writeText(shareUrl);
+    function fmtTime(ms) { try { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
 
-    loadMine();
+    // ---- camera ----
+    function startCamera() {
+        $('camOverlay').classList.remove('hidden');
+        const status = $('camStatus');
+        sender = new CameraSender({ token, ice: ICE, getNick: () => nick || 'anon', preview: $('camPreview'), onStatus: s => { status.textContent = s; } });
+        sender.start().catch(e => { status.textContent = 'Camera error: ' + (e.message || e); });
+        $('camFlip').onclick = () => sender && sender.flip().catch(() => {});
+        $('camStop').onclick = stopCamera;
+    }
+    function stopCamera() { if (sender) { sender.stop(); sender = null; } $('camOverlay').classList.add('hidden'); }
+
+    // ---- future: server broadcast messages would append here as .msg.them ----
 })();

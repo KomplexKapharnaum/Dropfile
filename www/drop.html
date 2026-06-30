@@ -3,55 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Dropfile · Drop</title>
+    <title>KXKM</title>
     <link rel="stylesheet" href="/drop.css">
-    <link href="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone.css" rel="stylesheet" type="text/css" />
-    <script src="https://unpkg.com/dropzone@6.0.0-beta.1/dist/dropzone-min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/camera.js"></script>
 </head>
 <body>
-    <header>
+    <header class="chat-head">
         <div class="titles">
-            <h1 id="projTitle">Drop</h1>
-            <p id="sceneTitle" class="muted"></p>
+            <div class="ch-title">KXKM</div>
+            <div id="sub" class="ch-sub"></div>
         </div>
-        <button id="shareBtn" title="Share">⤴ Share</button>
+        <button id="nickBtn" class="nick">👤 <span id="nickName">…</span> ✎</button>
     </header>
 
-    <section class="nickrow">
-        <label>Your name
-            <input id="nick" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off">
-        </label>
-    </section>
+    <div id="timeline" class="timeline"></div>
 
-    <button id="goLive" class="golive hidden">
-        <span class="dot">●</span> Go live — share your camera
-    </button>
+    <form id="composer" class="composer">
+        <button type="button" id="attachBtn" class="cbtn icon" title="Send photo / video">＋</button>
+        <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
+        <input type="text" id="textInput" class="ctext" placeholder="Message…" autocomplete="off">
+        <button type="button" id="liveBtn" class="cbtn live icon hidden" title="Go live">●</button>
+        <button type="submit" id="sendBtn" class="cbtn send">Send</button>
+    </form>
 
-    <div id="dz" class="dropzone hidden"></div>
-
-    <section id="textBox" class="textbox hidden">
-        <label>Your message
-            <textarea id="textInput" rows="4" placeholder="Type a message…"></textarea>
-        </label>
-        <button id="sendText">Send text</button>
-    </section>
-
-    <section id="mine">
-        <h2>Your uploads <span id="mineHint" class="muted"></span></h2>
-        <div id="mineGrid" class="grid"></div>
-    </section>
-
-    <div id="shareModal" class="modal hidden">
-        <div class="modal-box">
-            <canvas id="qr"></canvas>
-            <p id="shareUrl" class="muted"></p>
-            <div class="row">
-                <button id="copyBtn">Copy link</button>
-                <button id="closeShare">Close</button>
-            </div>
+    <div id="nickModal" class="nick-modal hidden">
+        <div class="nm-box">
+            <h3>Your name</h3>
+            <input id="nickField" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off">
+            <button id="nickSave" class="primary">OK</button>
         </div>
     </div>
 
