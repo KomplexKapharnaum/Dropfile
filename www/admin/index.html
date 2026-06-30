@@ -143,6 +143,18 @@
                                         <option value="grid" :selected="s.streamMode==='grid'">grid</option>
                                     </select>
                                 </div>
+                                <div class="sc-maxchars" x-show="s.accept && s.accept.text" x-cloak>
+                                    <label>Text limit
+                                        <input type="number" min="0" step="1" x-model.number="s.maxChars" @change="saveMaxChars(project(),s)" title="Max characters per message — 0 = unlimited">
+                                    </label>
+                                    <span class="muted">chars · 0 = unlimited</span>
+                                </div>
+                                <div class="sc-relay" x-show="s.accept && (s.accept.text || s.accept.image)" x-cloak>
+                                    <span class="muted" title="Forward incoming messages to the KXKM relay (relay.kxkm.net)" x-html="icon('relay')"></span>
+                                    <span class="muted">Relay</span>
+                                    <button class="iconbtn tchip" x-show="s.accept && s.accept.text" :class="{on: s.relayText}" @click="toggleRelay(project(),s,'text')" title="Relay incoming text to relay.kxkm.net" x-html="icon('text')"></button>
+                                    <button class="iconbtn tchip" x-show="s.accept && s.accept.image" :class="{on: s.relayImage}" @click="toggleRelay(project(),s,'image')" title="Relay incoming images to relay.kxkm.net" x-html="icon('image')"></button>
+                                </div>
                                 <div class="sc-welcome" x-show="welcomeOpen[s.id]" x-cloak>
                                     <textarea rows="2" maxlength="500" x-model="s.welcome" @change="saveWelcome(project(),s)"
                                         placeholder="Welcome message — shown to people who open this drop, as an incoming message (e.g. “Send us your best photo of the show!”)"></textarea>
@@ -183,8 +195,18 @@
                                         <span class="cr-machine muted" x-text="st.machine ? (st.machine.name + (st.machine.type ? ' · '+st.machine.type : '')) : 'no machine'"></span>
                                     </div>
                                     <button class="iconbtn" title="Open display" @click="st.machine && openShare(machineUrl(st.machine), st.nickname)" x-html="icon('share')"></button>
+                                    <button class="iconbtn" :class="{on: !mediaFilterAll(st)}" title="Media filter — choose which media types this station shows" @click="toggleMediaFilterOpts(st)" x-html="icon('filter')"></button>
                                     <button class="iconbtn" title="Station settings" @click="openStationModal(project(), st)" x-html="icon('gear')"></button>
                                     <button class="iconbtn danger" title="Remove station" @click="removeStation(project(), st)" x-html="icon('close')"></button>
+                                </div>
+                                <div class="media-filter-opts" x-show="mediaFilterOpts[st.id]" x-cloak>
+                                    <span class="mf-label">Show</span>
+                                    <button class="tchip" :class="{on: mediaFilterAll(st)}" @click="setMediaFilterAll(st)" title="Show all media">All</button>
+                                    <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.image}" @click="toggleMediaFilter(st,'image')" title="Images" x-html="icon('image')"></button>
+                                    <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.video}" @click="toggleMediaFilter(st,'video')" title="Videos" x-html="icon('video')"></button>
+                                    <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.audio}" @click="toggleMediaFilter(st,'audio')" title="Audio" x-html="icon('audio')"></button>
+                                    <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.text}" @click="toggleMediaFilter(st,'text')" title="Text" x-html="icon('text')"></button>
+                                    <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.stream}" @click="toggleMediaFilter(st,'stream')" title="Camera stream" x-html="icon('stream')"></button>
                                 </div>
                                 <div class="cr-status" :class="statusClass(st)" x-text="statusLabel(st)"></div>
                                 <div class="cr-transport">

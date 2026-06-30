@@ -32,6 +32,7 @@ module.exports = function (ctx) {
         return {
             id: ids.id(), machineId, nickname,
             surface: defaults.defaultSurface(), playback: defaults.defaultPlayback(),
+            mediaFilter: defaults.defaultMediaFilter(),
             midi: { map: {} }, createdAt: Date.now()
         };
     }
@@ -57,6 +58,8 @@ module.exports = function (ctx) {
     }
     function defaultAccept() { return { image: true, video: true, audio: false, text: false, stream: false }; }
     function cleanAccept(a) { return { image: !!a.image, video: !!a.video, audio: !!a.audio, text: !!a.text, stream: !!a.stream }; }
+    // text-input character cap for the drop page: default 140, 0 = unlimited
+    function cleanMaxChars(v) { const n = Math.floor(Number(v)); return (Number.isFinite(n) && n >= 0) ? n : 140; }
 
     function makeScene(p, name, accept) {
         const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));
@@ -65,7 +68,8 @@ module.exports = function (ctx) {
             id: sid, name, folder,
             dropToken: ids.token(), allowSelfDelete: true, order: [],
             accept: accept ? cleanAccept(accept) : defaultAccept(),
-            welcome: '', streamMode: 'replace', createdAt: Date.now()
+            welcome: '', streamMode: 'replace', maxChars: 140,
+            relayText: false, relayImage: false, createdAt: Date.now()
         };
         p.sources = p.sources || {};
         p.sources[sid] = scene;
@@ -83,6 +87,8 @@ module.exports = function (ctx) {
             accept: s.accept ? cleanAccept(s.accept) : defaultAccept(),
             welcome: s.welcome || '',
             streamMode: s.streamMode === 'grid' ? 'grid' : 'replace',
+            maxChars: cleanMaxChars(s.maxChars),
+            relayText: !!s.relayText, relayImage: !!s.relayImage,
             count: sceneCount(p, s)
         };
     }
@@ -124,6 +130,7 @@ module.exports = function (ctx) {
             id: st.id, machineId: st.machineId, nickname: st.nickname,
             surface: defaults.cleanSurface(st.surface),
             playback: defaults.cleanPlayback(st.playback),
+            mediaFilter: defaults.cleanMediaFilter(st.mediaFilter),
             midi: { map: (st.midi && st.midi.map) || {} },
             machine: m ? { id: m.id, name: m.name, type: m.type || '', token: m.token } : null,
             driving,
@@ -297,6 +304,9 @@ module.exports = function (ctx) {
         if (typeof req.body.welcome === 'string') s.welcome = req.body.welcome.slice(0, 500);
         if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
         if (req.body.streamMode === 'replace' || req.body.streamMode === 'grid') s.streamMode = req.body.streamMode;
+        if (req.body.maxChars !== undefined) s.maxChars = cleanMaxChars(req.body.maxChars);
+        if (typeof req.body.relayText === 'boolean') s.relayText = req.body.relayText;
+        if (typeof req.body.relayImage === 'boolean') s.relayImage = req.body.relayImage;
         store.save();
         refreshSceneMachines(s.id); // push new accept/streamMode to players already showing this scene
         res.json({ project: serializeProject(req._project) });
@@ -423,9 +433,17 @@ module.exports = function (ctx) {
         if (req.body.surface && typeof req.body.surface === 'object') st.surface = defaults.cleanSurface(Object.assign({}, st.surface, req.body.surface));
         if (req.body.playback && typeof req.body.playback === 'object') st.playback = defaults.cleanPlayback(Object.assign({}, st.playback, req.body.playback));
         if (req.body.midi && req.body.midi.map && typeof req.body.midi.map === 'object') { st.midi = st.midi || { map: {} }; st.midi.map = req.body.midi.map; }
+        let filterChanged = false;
+        if (req.body.mediaFilter && typeof req.body.mediaFilter === 'object') {
+            st.mediaFilter = defaults.cleanMediaFilter(Object.assign({}, st.mediaFilter, req.body.mediaFilter));
+            filterChanged = true;
+        }
         store.save();
         const m = model.stationMachine(st);
-        if (m && model.stationDriving(found.project.id, st)) broadcastSettings(m);
+        if (m && model.stationDriving(found.project.id, st)) {
+            broadcastSettings(m);
+            if (filterChanged) broadcastActive(m);   // playlist + stream flag depend on the filter
+        }
         res.json({ project: serializeProject(found.project) });
     });
 

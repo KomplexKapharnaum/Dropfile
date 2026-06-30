@@ -36,6 +36,7 @@ const ICONS = {
     audio: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
     text: '<path d="M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"/><path d="M15 3v4h4"/><path d="M9 13h6"/><path d="M9 17h6"/>',
     stream: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
+    filter: '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
     play: '<polygon points="6 4 20 12 6 20 6 4"/>',
     pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
     prev: '<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>',
@@ -45,7 +46,8 @@ const ICONS = {
     stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
     cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>',
     monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
-    message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'
+    message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    relay: '<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/>'
 };
 
 function adminApp() {
@@ -80,7 +82,7 @@ function adminApp() {
             { cmd: 'next', label: 'Next', icon: 'next' },
             { cmd: 'reload', label: 'Reload', icon: 'reload' }
         ],
-        socket: null, status: {}, autoScroll: true, autoplayOpts: {}, crOpen: {},
+        socket: null, status: {}, autoScroll: true, autoplayOpts: {}, mediaFilterOpts: {}, crOpen: {},
         stationMidiMedia: {},   // station id -> active scene files (station modal, local MIDI)
         mediaTimers: {},        // scene id -> debounce timer for live media refresh
 
@@ -217,6 +219,8 @@ function adminApp() {
         setAcceptAll(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept: { image: true, video: true, audio: true, text: true, stream: true } }); this.replaceProject(r.project); }); },
         toggleAccept(p, s, kind) { const accept = Object.assign({ image: true, video: true, audio: false, text: false, stream: false }, s.accept || {}); accept[kind] = !accept[kind]; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept }); this.replaceProject(r.project); }); },
         setStreamMode(p, s, mode) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { streamMode: mode }); this.replaceProject(r.project); }); },
+        saveMaxChars(p, s) { const n = Math.floor(Number(s.maxChars)); const v = (Number.isFinite(n) && n >= 0) ? n : 140; s.maxChars = v; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { maxChars: v }); this.replaceProject(r.project); }); },
+        toggleRelay(p, s, kind) { const key = kind === 'image' ? 'relayImage' : 'relayText'; const patch = {}; patch[key] = !s[key]; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, patch); this.replaceProject(r.project); }); },
 
         // scene drag-reorder (handle = index chip)
         sceneDragStart(p, i, ev) { this.sceneDrag = { pid: p.id, from: i, sid: p.sources[i].id }; if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'; },
@@ -327,6 +331,12 @@ function adminApp() {
         stop(p, st) { if (this.consoleLearn) return this.learnConsole(st.id, { type: 'stop' }); this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: '' }); this.replaceProject(r.project); }); },
         isStopped(st) { return !st.activeSceneId; },
         toggleAutoplayOpts(st) { this.autoplayOpts[st.id] = !this.autoplayOpts[st.id]; },
+        // per-station media-type filter (which kinds of media this station displays)
+        toggleMediaFilterOpts(st) { this.mediaFilterOpts[st.id] = !this.mediaFilterOpts[st.id]; },
+        mediaFilterAll(st) { const f = st.mediaFilter || {}; return !!(f.image && f.video && f.audio && f.text && f.stream); },
+        setMediaFilterAll(st) { st.mediaFilter = { image: true, video: true, audio: true, text: true, stream: true }; this.saveStationFilter(st); },
+        toggleMediaFilter(st, kind) { const f = Object.assign({ image: true, video: true, audio: true, text: true, stream: true }, st.mediaFilter || {}); f[kind] = !f[kind]; st.mediaFilter = f; this.saveStationFilter(st); },
+        saveStationFilter(st) { const p = this.project(); if (!p) return; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}`, { mediaFilter: st.mediaFilter }); this.replaceProject(r.project); this.notify('Applied live'); }); },
 
         // ---- live status (keyed by machine) ----
         statusLabel(st) {
