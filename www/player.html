@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/player.css">
     <script src="/socket.io/socket.io.js"></script>
     <script src="/receiver.js"></script>
+    <script src="/midi.js"></script>
 </head>
 <body>
     <div id="stage">
@@ -16,6 +17,16 @@
         </div>
         <div id="counter" class="counter"></div>
     </div>
+
+    <div id="midiLearn" class="midi-learn hidden">
+        <div class="ml-head">
+            <span><b>MIDI learn</b> — click a target, then press a pad. Press <b>m</b> to close.</span>
+            <span id="mlPorts" class="ml-ports"></span>
+        </div>
+        <div class="ml-actions" id="mlActions"></div>
+        <div class="ml-grid" id="mlGrid"></div>
+    </div>
+
     <script src="/player.js"></script>
 </body>
 </html>

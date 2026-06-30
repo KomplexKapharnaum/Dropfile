@@ -1,6 +1,7 @@
 // Public player display routes (token-secured).
 const express = require('express');
 const path = require('path');
+const store = require('../lib/store');
 const model = require('../lib/model');
 const playlistLib = require('../lib/playlist');
 const turn = require('../lib/turn');
@@ -42,6 +43,18 @@ module.exports = function (ctx) {
         const player = model.findPlayerByToken(req.params.token);
         if (!player) return res.status(404).json({ error: 'unknown player' });
         res.json({ media: playlistLib.playlist(UPLOAD_PATH, player) });
+    });
+
+    // persist the MIDI map from the player side (token-secured, no admin auth)
+    router.put('/api/player/:token/midi', (req, res) => {
+        const player = model.findPlayerByToken(req.params.token);
+        if (!player) return res.status(404).json({ error: 'unknown player' });
+        player.settings = player.settings || {};
+        player.settings.midi = player.settings.midi || { map: {} };
+        if (req.body.map && typeof req.body.map === 'object') player.settings.midi.map = req.body.map;
+        store.save();
+        ctx.io.to('player:' + player.token).emit('settings', player.settings);
+        res.json({ ok: true });
     });
 
     return router;

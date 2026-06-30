@@ -52,6 +52,18 @@ function adminApp() {
         editPlayers: {},   // per-project: choosing enabled players
         editProjects: {},  // per-player: choosing attached projects
         paused: {},        // per-player optimistic play/pause state (remote)
+        midiBus: null,
+        midiPorts: [],
+        midiLive: null,    // player id driven live by the admin's MIDI device
+        midiMedia: {},     // player id -> active-scene files (for mapping)
+        transportTargets: [
+            { cmd: 'restart', label: 'Restart', icon: 'restart' },
+            { cmd: 'prev', label: 'Prev', icon: 'prev' },
+            { cmd: 'play', label: 'Play', icon: 'play' },
+            { cmd: 'pause', label: 'Pause', icon: 'pause' },
+            { cmd: 'next', label: 'Next', icon: 'next' },
+            { cmd: 'reload', label: 'Reload', icon: 'reload' }
+        ],
         // per-scene UI state (keyed by scene id)
         expanded: {},
         files: {},
@@ -88,7 +100,10 @@ function adminApp() {
 
         async loadAll() { await this.loadProjects(); await this.loadPlayers(); },
         async loadProjects() { this.projects = (await api('GET', '/projects')).projects; },
-        async loadPlayers() { this.players = (await api('GET', '/players')).players; },
+        async loadPlayers() {
+            this.players = (await api('GET', '/players')).players;
+            this.players.forEach(pl => { if (pl.settings && pl.settings.playMode === 'midi') this.loadMidiMedia(pl); });
+        },
 
         // ---- projects ----
         createProject() {
@@ -359,7 +374,9 @@ function adminApp() {
             this.guard(async () => { await api('PUT', '/players/' + pl.id + '/active', { projectId, sourceId }); await this.loadPlayers(); this.notify('Source set'); });
         },
         saveSettings(pl) {
-            this.guard(async () => { await api('PUT', '/players/' + pl.id + '/settings', { settings: pl.settings }); this.notify('Applied live'); });
+            const settings = Object.assign({}, pl.settings); delete settings.midi; // midi map has its own endpoint
+            this.guard(async () => { await api('PUT', '/players/' + pl.id + '/settings', { settings }); this.notify('Applied live'); });
+            if (pl.settings.playMode === 'midi' && !(this.midiMedia[pl.id] || []).length) this.loadMidiMedia(pl);
         },
         playerCommand(pl, cmd) {
             this.guard(async () => { await api('POST', '/players/' + pl.id + '/command', { cmd }); });
@@ -368,6 +385,48 @@ function adminApp() {
             const p = !this.paused[pl.id];
             this.paused[pl.id] = p;
             this.playerCommand(pl, p ? 'pause' : 'play');
+        },
+
+        // ---- MIDI (admin side: learn + live drive) ----
+        async ensureMidi() {
+            if (this.midiBus || !window.MidiBus) return;
+            const bus = new MidiBus();
+            bus.onpress = (key) => this.onMidiPress(key);
+            bus.onports = (names) => { this.midiPorts = names; };
+            try { await bus.init(); this.midiBus = bus; } catch (e) { this.midiBus = null; this.notify('Web MIDI unavailable'); }
+        },
+        midiEnsureMap(pl) { pl.settings = pl.settings || {}; pl.settings.midi = pl.settings.midi || { map: {} }; pl.settings.midi.map = pl.settings.midi.map || {}; return pl.settings.midi.map; },
+        midiSameAction(a, b) { return a && b && a.type === b.type && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); },
+        midiKeyLabel(pl, action) {
+            const map = (pl.settings && pl.settings.midi && pl.settings.midi.map) || {};
+            for (const [k, a] of Object.entries(map)) if (this.midiSameAction(a, action)) return window.midiKeyLabel(k);
+            return 'unmapped';
+        },
+        async midiLearn(pl, action) {
+            await this.ensureMidi();
+            if (!this.midiBus) return;
+            this.notify('Press a pad…');
+            this.midiBus.learnNext((key) => {
+                const map = this.midiEnsureMap(pl);
+                for (const k of Object.keys(map)) if (this.midiSameAction(map[k], action)) delete map[k];
+                map[key] = action;
+                this.midiSave(pl);
+            });
+        },
+        midiClear(pl, action) { const map = this.midiEnsureMap(pl); for (const k of Object.keys(map)) if (this.midiSameAction(map[k], action)) delete map[k]; this.midiSave(pl); },
+        midiSave(pl) { this.guard(async () => { await api('PUT', '/players/' + pl.id + '/midi', { map: this.midiEnsureMap(pl) }); this.notify('MIDI saved'); }); },
+        async toggleMidiLive(pl) { await this.ensureMidi(); this.midiLive = (this.midiLive === pl.id) ? null : pl.id; },
+        onMidiPress(key) {
+            if (!this.midiLive) return;
+            const pl = this.players.find(p => p.id === this.midiLive); if (!pl) return;
+            const a = ((pl.settings && pl.settings.midi && pl.settings.midi.map) || {})[key]; if (!a) return;
+            if (a.type === 'media') api('POST', '/players/' + pl.id + '/command', { cmd: 'select', name: a.name }).catch(() => {});
+            else if (a.type === 'transport') api('POST', '/players/' + pl.id + '/command', { cmd: a.cmd }).catch(() => {});
+            else if (a.type === 'blackout') api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {});
+        },
+        loadMidiMedia(pl) {
+            if (!pl.activeProjectId || !pl.activeSourceId) { this.midiMedia[pl.id] = []; return; }
+            api('GET', `/projects/${pl.activeProjectId}/sources/${pl.activeSourceId}/files`).then(r => { this.midiMedia[pl.id] = r.files; }).catch(() => { this.midiMedia[pl.id] = []; });
         },
 
         fmtSize(n) { if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(0) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }

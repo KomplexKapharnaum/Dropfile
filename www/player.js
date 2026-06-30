@@ -35,6 +35,8 @@
     let timer = null;
     let rafId = null;
     let paused = false;
+    let blackedOut = false;
+    let midi = null;
     // camera takeover
     let receiver = null;
     let streaming = false;
@@ -56,7 +58,7 @@
     receiver = new StreamReceiver({ token, socket, onChange: onStreamChange });
     socket.on('connect', () => { socket.emit('player-join', token); setStatus(''); });
     socket.on('disconnect', () => setStatus('reconnecting…'));
-    socket.on('settings', (s) => { settings = s; layout(); });
+    socket.on('settings', (s) => { settings = s; layout(); if (learnEl && !learnEl.classList.contains('hidden')) buildLearn(); });
     socket.on('active-change', (data) => {
         active = data.active || null;
         playlist = data.media || [];
@@ -65,13 +67,11 @@
         if (!streaming) start();
     });
     socket.on('new-media', (m) => { fresh.push(m); updateCounter(); });
-    socket.on('command', (cmd) => {
-        if (cmd === 'next') next();
-        else if (cmd === 'prev') prev();
-        else if (cmd === 'reload') reload();
-        else if (cmd === 'pause') pause();
-        else if (cmd === 'play') play();
-        else if (cmd === 'restart') restart();
+    socket.on('command', (c) => {
+        const cmd = (typeof c === 'string') ? c : (c && c.cmd);
+        if (cmd === 'select') selectByName(c.name);
+        else if (cmd === 'blackout') setBlackout(c.on === undefined ? !blackedOut : !!c.on);
+        else doTransport(cmd);
     });
 
     function setStatus(msg) {
@@ -170,6 +170,111 @@
         show(queue[0]);
     }
 
+    function doTransport(cmd) {
+        if (cmd === 'next') next();
+        else if (cmd === 'prev') prev();
+        else if (cmd === 'reload') reload();
+        else if (cmd === 'pause') pause();
+        else if (cmd === 'play') play();
+        else if (cmd === 'restart') restart();
+    }
+
+    // jump straight to a media item by filename (MIDI / admin select)
+    function selectByName(name) {
+        if (!name) return;
+        clearTimers(); paused = false;
+        if (blackedOut) setBlackout(false);
+        const qi = queue.findIndex(m => m.name === name);
+        if (qi >= 0) { index = qi; show(queue[qi]); return; }
+        const item = playlist.find(m => m.name === name);
+        if (item) show(item);
+    }
+
+    function setBlackout(on) {
+        blackedOut = on;
+        if (on) { clearTimers(); clearCanvas(); }
+        else if (!streaming && current) redraw();
+    }
+
+    // ---- MIDI dispatch ----
+    function handleMidi(key) {
+        const map = (settings.midi && settings.midi.map) || {};
+        const a = map[key];
+        if (!a) return;
+        if (a.type === 'media') selectByName(a.name);
+        else if (a.type === 'transport') doTransport(a.cmd);
+        else if (a.type === 'blackout') setBlackout(!blackedOut);
+    }
+
+    // ---- MIDI learn overlay (press 'm' on the player machine) ----
+    const learnEl = document.getElementById('midiLearn');
+    function toggleLearn() {
+        if (!learnEl) return;
+        if (learnEl.classList.contains('hidden')) { buildLearn(); learnEl.classList.remove('hidden'); }
+        else { learnEl.classList.add('hidden'); if (midi) midi.cancelLearn(); }
+    }
+    function midiMap() { settings.midi = settings.midi || { map: {} }; settings.midi.map = settings.midi.map || {}; return settings.midi.map; }
+    function sameAction(a, b) { return a && b && a.type === b.type && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); }
+    function keyForAction(action) { const map = midiMap(); for (const [k, a] of Object.entries(map)) if (sameAction(a, action)) return k; return null; }
+    function unbind(action) { const map = midiMap(); for (const k of Object.keys(map)) if (sameAction(map[k], action)) delete map[k]; persistMidi(); buildLearn(); }
+    function arm(action, keyEl) {
+        if (!midi) { keyEl.textContent = 'no MIDI'; return; }
+        keyEl.textContent = 'press a pad…';
+        midi.learnNext((key) => {
+            const map = midiMap();
+            for (const k of Object.keys(map)) if (sameAction(map[k], action)) delete map[k];
+            map[key] = action;
+            persistMidi(); buildLearn();
+        });
+    }
+    function persistMidi() {
+        fetch('/api/player/' + token + '/midi', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ map: midiMap() }) }).catch(() => {});
+    }
+    function buildLearn() {
+        if (!learnEl) return;
+        document.getElementById('mlPorts').textContent = (midi && midi.inputs && midi.inputs.length) ? ('in: ' + midi.inputs.map(i => i.name).join(', '))
+            : (midi && midi.supported ? 'no MIDI input detected' : 'Web MIDI not supported');
+        const actions = document.getElementById('mlActions');
+        actions.innerHTML = '';
+        [['restart', '⏮'], ['prev', '◀'], ['play', '▶'], ['pause', '⏸'], ['next', '▶▶'], ['reload', '⟲']]
+            .forEach(([cmd, label]) => actions.appendChild(targetEl({ type: 'transport', cmd }, label)));
+        actions.appendChild(targetEl({ type: 'blackout' }, '⬛ black'));
+        const grid = document.getElementById('mlGrid');
+        grid.innerHTML = '';
+        const list = queue.length ? queue : playlist;
+        if (!list.length) { grid.innerHTML = '<span class="ml-empty">No media in this scene.</span>'; return; }
+        list.forEach(m => grid.appendChild(mediaTargetEl(m)));
+    }
+    function targetEl(action, label) {
+        const div = document.createElement('div'); div.className = 'ml-target';
+        const k = keyForAction(action);
+        const btn = document.createElement('button'); btn.className = 'ml-btn'; btn.textContent = label;
+        const key = document.createElement('span'); key.className = 'ml-key'; key.textContent = k ? midiKeyLabel(k) : 'unmapped';
+        btn.onclick = () => arm(action, key);
+        div.appendChild(btn); div.appendChild(key);
+        if (k) { const x = document.createElement('button'); x.className = 'ml-x'; x.textContent = '×'; x.onclick = () => unbind(action); div.appendChild(x); }
+        return div;
+    }
+    function mediaTargetEl(m) {
+        const div = document.createElement('div'); div.className = 'ml-tile';
+        const action = { type: 'media', name: m.name };
+        const k = keyForAction(action);
+        if (m.type === 'image') { const img = document.createElement('img'); img.src = m.url; div.appendChild(img); }
+        else { const ph = document.createElement('div'); ph.className = 'ml-ph'; ph.textContent = '▶'; div.appendChild(ph); }
+        const key = document.createElement('span'); key.className = 'ml-key'; key.textContent = k ? midiKeyLabel(k) : 'tap to learn';
+        div.appendChild(key);
+        div.onclick = () => arm(action, key);
+        if (k) { const x = document.createElement('button'); x.className = 'ml-x'; x.textContent = '×'; x.onclick = (e) => { e.stopPropagation(); unbind(action); }; div.appendChild(x); }
+        return div;
+    }
+
+    if (window.MidiBus) {
+        midi = new MidiBus();
+        midi.onpress = handleMidi;
+        midi.onports = () => { if (learnEl && !learnEl.classList.contains('hidden')) buildLearn(); };
+        midi.init().catch(() => {});
+    }
+
     function show(item) {
         current = item;
         setStatus('');
@@ -264,6 +369,7 @@
 
     function redraw() {
         clearCanvas();
+        if (blackedOut) return;
         const m = mediaIntrinsic();
         if (!m) return;
         const sc = settings.scaler;
@@ -314,6 +420,7 @@
         const sc = settings.scaler;
         const C = container();
         ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (blackedOut) return;
         const list = receiver.list().filter(s => s.video.videoWidth);
         if (!list.length) return;
 
@@ -367,6 +474,7 @@
         if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
         else if (e.key === 'ArrowLeft') { prev(); }
         else if (e.key === 'f') { document.documentElement.requestFullscreen?.(); }
+        else if (e.key === 'm') { toggleLearn(); }
     });
     canvas.addEventListener('click', () => { if (streaming) updateAudio(); else next(); });
     window.addEventListener('resize', layout);

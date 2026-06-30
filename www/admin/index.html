@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dropfile · Admin</title>
     <link rel="stylesheet" href="/admin/admin.css">
+    <script src="/midi.js"></script>
     <script src="/admin/admin.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
@@ -219,6 +220,7 @@
                                 <select x-model="pl.settings.playMode" @change="saveSettings(pl)">
                                     <option value="diaporama">diaporama (auto)</option>
                                     <option value="manual">manual (keypress)</option>
+                                    <option value="midi">MIDI (trigger surface)</option>
                                 </select>
                             </label>
                             <label class="field inline" x-show="pl.settings.playMode !== 'manual'">
@@ -298,6 +300,36 @@
                                 <input type="checkbox" x-model="pl.settings.scaler.evenLineSuppression" @change="saveSettings(pl)">
                                 even-line squash (vertical 50%)
                             </label>
+                        </fieldset>
+
+                        <fieldset class="settings" x-show="pl.settings.playMode==='midi'" x-cloak>
+                            <legend>MIDI control</legend>
+                            <div class="midi-top">
+                                <span class="muted" x-text="midiBus ? (midiPorts.length ? ('in: ' + midiPorts.join(', ')) : 'no MIDI input on this machine') : 'use Learn / Live to enable Web MIDI here'"></span>
+                                <label class="chk"><input type="checkbox" :checked="midiLive===pl.id" @change="toggleMidiLive(pl)"> drive from my controller</label>
+                            </div>
+                            <p class="muted hint">Click a target then press a pad to map · or press <b>m</b> on the player screen.</p>
+                            <div class="midi-rows">
+                                <template x-for="t in transportTargets" :key="t.cmd">
+                                    <div class="midi-row" @click="midiLearn(pl,{type:'transport',cmd:t.cmd})" :title="'Learn: ' + t.label">
+                                        <button class="iconbtn" x-html="icon(t.icon)"></button>
+                                        <span class="mk" x-text="midiKeyLabel(pl,{type:'transport',cmd:t.cmd})"></span>
+                                    </div>
+                                </template>
+                                <div class="midi-row" @click="midiLearn(pl,{type:'blackout'})" title="Learn: Blackout">
+                                    <button class="iconbtn">⬛</button>
+                                    <span class="mk" x-text="midiKeyLabel(pl,{type:'blackout'})"></span>
+                                </div>
+                            </div>
+                            <div class="midi-tiles">
+                                <template x-for="f in (midiMedia[pl.id]||[])" :key="f.name">
+                                    <div class="midi-tile" @click="midiLearn(pl,{type:'media',name:f.name})">
+                                        <img :src="f.thumb" loading="lazy" alt="">
+                                        <span class="mk" x-text="midiKeyLabel(pl,{type:'media',name:f.name})"></span>
+                                    </div>
+                                </template>
+                                <span class="muted" x-show="!(midiMedia[pl.id]||[]).length">Set an active scene with media to map clips · <a @click="loadMidiMedia(pl)" style="cursor:pointer;color:var(--accent)">reload</a></span>
+                            </div>
                         </fieldset>
                     </div>
                 </div>

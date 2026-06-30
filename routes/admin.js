@@ -30,7 +30,8 @@ module.exports = function (ctx) {
                 fit: 'contain',                 // common filling options:
                 rotation: 0,
                 evenLineSuppression: false      // vertical 50% squash for semi-transparent LED
-            }
+            },
+            midi: { map: {} }                   // MIDI key -> action (media/transport/blackout)
         };
     }
 
@@ -421,15 +422,30 @@ module.exports = function (ctx) {
         res.json({ player: serializePlayer(pl) });
     });
 
-    // playback remote: push a transport command to the live player(s)
-    const COMMANDS = ['next', 'prev', 'reload', 'pause', 'play', 'restart'];
+    // playback remote + MIDI: push a command to the live player(s)
+    const SIMPLE = ['next', 'prev', 'reload', 'pause', 'play', 'restart'];
     api.post('/players/:id/command', (req, res) => {
         const pl = store.data.players[req.params.id];
         if (!pl) return res.status(404).json({ error: 'not found' });
+        const room = 'player:' + pl.token;
         const cmd = String(req.body.cmd || '');
-        if (!COMMANDS.includes(cmd)) return res.status(400).json({ error: 'unknown command' });
-        io.to('player:' + pl.token).emit('command', cmd);
+        if (SIMPLE.includes(cmd)) io.to(room).emit('command', cmd);
+        else if (cmd === 'select') io.to(room).emit('command', { cmd: 'select', name: String(req.body.name || '') });
+        else if (cmd === 'blackout') io.to(room).emit('command', { cmd: 'blackout', on: req.body.on });
+        else return res.status(400).json({ error: 'unknown command' });
         res.json({ ok: true });
+    });
+
+    // persist a player's MIDI map (admin side)
+    api.put('/players/:id/midi', (req, res) => {
+        const pl = store.data.players[req.params.id];
+        if (!pl) return res.status(404).json({ error: 'not found' });
+        pl.settings = pl.settings || defaultSettings();
+        pl.settings.midi = pl.settings.midi || { map: {} };
+        if (req.body.map && typeof req.body.map === 'object') pl.settings.midi.map = req.body.map;
+        store.save();
+        io.to('player:' + pl.token).emit('settings', pl.settings);
+        res.json({ player: serializePlayer(pl) });
     });
 
     return { api, page: express.static(path.join(__dirname, '..', 'www', 'admin')) };
