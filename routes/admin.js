@@ -355,6 +355,14 @@ module.exports = function (ctx) {
         res.json({ machines: Object.values(store.data.machines).map(serializeMachine) });
     });
 
+    // force every connected kiosk to reload its page — picks up a new front-end
+    // build (JS/HTML/CSS) without rebooting the box. Code revalidates via no-cache
+    // (see app.js); media stays in the immutable cache and is re-fetched lazily.
+    api.post('/machines/reload', (req, res) => {
+        io.to('players').emit('command', 'refresh');
+        res.json({ ok: true });
+    });
+
     api.post('/machines', (req, res) => {
         const id = ids.id();
         store.data.machines[id] = newMachine(id, String(req.body.name || 'Machine').trim() || 'Machine');
@@ -455,7 +463,7 @@ module.exports = function (ctx) {
     });
 
     // playback remote + MIDI: push a command to the station's machine
-    const SIMPLE = ['next', 'prev', 'reload', 'pause', 'play', 'restart'];
+    const SIMPLE = ['next', 'prev', 'reload', 'pause', 'play', 'restart', 'refresh'];
     api.post('/projects/:pid/stations/:sid/command', (req, res) => {
         const found = model.findStation(req.params.pid, req.params.sid);
         if (!found) return res.status(404).json({ error: 'not found' });

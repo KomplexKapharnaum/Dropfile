@@ -242,6 +242,7 @@ function adminApp() {
         lbClose() { this.lbStopVideo(); this.lightbox.open = false; },
 
         // ---- machines (pool of physical boxes) ----
+        reloadStations() { if (!confirm('Force every connected station to reload its page now? Picks up new code (JS/HTML/CSS); media stays cached, no reboot.')) return; this.guard(async () => { await api('POST', '/machines/reload'); this.notify('Reload sent to connected stations'); }); },
         createMachine() { const name = (prompt('Machine name (the label on the box)', '') || '').trim(); if (!name) return; this.guard(async () => { await api('POST', '/machines', { name }); await this.loadMachines(); }); },
         renameMachine(m) { const name = prompt('Machine name', m.name); if (!name) return; this.guard(async () => { const r = await api('PUT', '/machines/' + m.id, { name }); this.replaceMachine(r.machine); }); },
         deleteMachine(m) { if (!confirm('Delete machine "' + m.name + '"? It will be removed from every project that uses it.')) return; this.guard(async () => { await api('DELETE', '/machines/' + m.id); await this.loadAll(); }); },

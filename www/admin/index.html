@@ -59,6 +59,7 @@
     <main x-show="view==='machines'" x-cloak>
         <div class="page-head">
             <h1>Machines <span class="muted">· physical boxes</span></h1>
+            <button @click="reloadStations()" title="Force every connected station to reload its code (after a deploy) — no reboot needed"><span x-html="icon('reload')"></span> Reload stations</button>
             <button @click="openTypes()"><span x-html="icon('cpu')"></span> Device types</button>
             <span class="spacer"></span>
             <button class="primary" @click="createMachine()"><span x-html="icon('plus')"></span> Machine</button>

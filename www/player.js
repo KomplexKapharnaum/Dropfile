@@ -80,6 +80,7 @@
         if (cmd === 'autoplay') { settings.playMode = 'diaporama'; start(); }
         else if (cmd === 'select') { settings.playMode = 'manual'; selectByName(c.name); }
         else if (cmd === 'blackout') setBlackout(c.on === undefined ? !blackedOut : !!c.on);
+        else if (cmd === 'refresh') location.reload();   // pull a fresh front-end build (code revalidates via no-cache)
         else doTransport(cmd);
     });
 

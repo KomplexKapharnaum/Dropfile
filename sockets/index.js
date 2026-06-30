@@ -12,7 +12,7 @@ module.exports = function (io, ctx) {
     io.on('connection', (socket) => {
         socket.on('player-join', (token) => {
             const machine = model.findMachineByToken(String(token || ''));
-            if (machine) { socket.join('player:' + machine.token); socket.data.machineId = machine.id; }
+            if (machine) { socket.join('player:' + machine.token); socket.join('players'); socket.data.machineId = machine.id; }
         });
 
         // admin console listens for live machine status
