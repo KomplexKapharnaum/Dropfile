@@ -57,12 +57,12 @@ module.exports = function (ctx) {
     function cleanAccept(a) { return { image: !!a.image, video: !!a.video, text: !!a.text, stream: !!a.stream }; }
 
     // create a scene under project p (shared by project-create and scene-create)
-    function makeScene(p, name, isPublic, accept) {
+    function makeScene(p, name, accept) {
         const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));
         const sid = ids.id();
         const scene = {
             id: sid, name, folder,
-            public: !!isPublic, dropToken: ids.token(),
+            dropToken: ids.token(),            // every scene is reachable by its URL
             allowSelfDelete: true, order: [],
             accept: accept ? cleanAccept(accept) : defaultAccept(),
             streamMode: 'replace',
@@ -79,7 +79,7 @@ module.exports = function (ctx) {
     function serializeScene(p, s) {
         return {
             id: s.id, name: s.name, folder: s.folder,
-            public: !!s.public, dropToken: s.dropToken,
+            dropToken: s.dropToken,
             allowSelfDelete: !!s.allowSelfDelete,
             accept: s.accept ? cleanAccept(s.accept) : defaultAccept(),
             streamMode: s.streamMode === 'grid' ? 'grid' : 'replace',
@@ -99,9 +99,13 @@ module.exports = function (ctx) {
     }
 
     function serializeProject(p) {
+        const scenes = orderedScenes(p).map(s => serializeScene(p, s));
         return {
             id: p.id, name: p.name, slug: p.slug, createdAt: p.createdAt,
-            sources: orderedScenes(p).map(s => serializeScene(p, s)),
+            sources: scenes,
+            sceneCount: scenes.length,
+            mediaCount: scenes.reduce((n, s) => n + s.count, 0),
+            console: { map: (p.console && p.console.map) ? p.console.map : {} },
             players: model.projectPlayers(p.id).map(pl => ({ id: pl.id, name: pl.name }))
         };
     }
@@ -224,7 +228,7 @@ module.exports = function (ctx) {
         const project = { id, name, slug, createdAt: Date.now(), sources: {}, sceneOrder: [] };
         store.data.projects[id] = project;
         try { fs.mkdirSync(path.join(UPLOAD_PATH, slug), { recursive: true }); } catch (e) {}
-        makeScene(project, 'Drop', true);  // every new project starts with a public Drop scene
+        makeScene(project, 'Drop');  // every new project starts with a Drop scene
         store.save();
         res.json({ project: serializeProject(project) });
     });
@@ -258,7 +262,7 @@ module.exports = function (ctx) {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
         const name = String(req.body.name || 'Scene').trim() || 'Scene';
-        makeScene(p, name, !!req.body.public, req.body.accept);
+        makeScene(p, name, req.body.accept);
         store.save();
         res.json({ project: serializeProject(p) });
     });
@@ -278,7 +282,6 @@ module.exports = function (ctx) {
     api.put('/projects/:id/sources/:sid', resolveSource, (req, res) => {
         const s = req._source;
         if (req.body.name) s.name = String(req.body.name).trim();
-        if (typeof req.body.public === 'boolean') s.public = req.body.public;
         if (typeof req.body.allowSelfDelete === 'boolean') s.allowSelfDelete = req.body.allowSelfDelete;
         if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
         if (req.body.streamMode === 'replace' || req.body.streamMode === 'grid') s.streamMode = req.body.streamMode;
@@ -434,6 +437,16 @@ module.exports = function (ctx) {
         else if (cmd === 'blackout') io.to(room).emit('command', { cmd: 'blackout', on: req.body.on });
         else return res.status(400).json({ error: 'unknown command' });
         res.json({ ok: true });
+    });
+
+    // persist a workspace's operator-console MIDI map (admin device -> player actions)
+    api.put('/projects/:id/console', (req, res) => {
+        const p = store.data.projects[req.params.id];
+        if (!p) return res.status(404).json({ error: 'not found' });
+        p.console = p.console || { map: {} };
+        if (req.body.map && typeof req.body.map === 'object') p.console.map = req.body.map;
+        store.save();
+        res.json({ project: serializeProject(p) });
     });
 
     // persist a player's MIDI map (admin side)

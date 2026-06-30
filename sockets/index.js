@@ -18,7 +18,7 @@ module.exports = function (io, ctx) {
 
             if (role === 'streamer') {
                 const found = model.findSourceByDropToken(String((msg && msg.token) || ''));
-                if (!found || !found.source.public || !(found.source.accept && found.source.accept.stream)) {
+                if (!found || !(found.source.accept && found.source.accept.stream)) {
                     return ack && ack({ error: 'streaming not available' });
                 }
                 sceneId = found.source.id;

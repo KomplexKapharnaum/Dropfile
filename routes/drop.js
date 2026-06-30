@@ -17,7 +17,7 @@ module.exports = function (ctx) {
     // resolve :token -> drop project / source / on-disk dir
     function resolveDrop(req, res, next) {
         const found = model.findSourceByDropToken(req.params.token);
-        if (!found || !found.source.public) return res.status(404).json({ error: 'unknown drop' });
+        if (!found) return res.status(404).json({ error: 'unknown drop' });
         req.dropProject = found.project;
         req.dropSource = found.source;
         req.dropDir = model.sourceDir(UPLOAD_PATH, found.project, found.source);
