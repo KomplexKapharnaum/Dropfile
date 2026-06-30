@@ -8,6 +8,7 @@ const store = require('../lib/store');
 const ids = require('../lib/ids');
 const model = require('../lib/model');
 const turn = require('../lib/turn');
+const relay = require('../lib/relay');
 const { mediaType, safeNick } = require('../lib/media');
 
 module.exports = function (ctx) {
@@ -89,6 +90,11 @@ module.exports = function (ctx) {
             }
         }
         io.to('admins').emit('scene-media', { sceneId: sid });   // live-refresh admin scene/clip grids
+
+        // optionally mirror images to the KXKM relay (best-effort, never awaited)
+        if (type === 'image' && req.dropSource.relayImage) {
+            relay.relayImage({ from: `${nick} (${req.dropSource.name})`, filePath: req.file.path });
+        }
         res.json({ ok: true, fileId });
     });
 
@@ -116,6 +122,11 @@ module.exports = function (ctx) {
         const payload = { name: filename, type: 'text', url: model.mediaUrl(req.dropProject, req.dropSource, filename) };
         for (const p of model.machinesForScene(sid)) io.to('player:' + p.token).emit('new-media', payload);
         io.to('admins').emit('scene-media', { sceneId: sid });   // live-refresh admin scene/clip grids
+
+        // optionally mirror the message to the KXKM relay (best-effort, never awaited)
+        if (req.dropSource.relayText) {
+            relay.relayText({ from: `${nick} (${req.dropSource.name})`, text });
+        }
         res.json({ ok: true, fileId });
     });
 

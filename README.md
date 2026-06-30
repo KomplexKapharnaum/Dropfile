@@ -65,6 +65,7 @@ cp .env.example .env     # then edit .env
 | `PUBLIC_URL` | Base URL for QR codes & share links (falls back to browser origin) |
 | `ADMIN_PASSWORD` | Admin password (HTTP Basic, any username). **If empty, admin is open.** |
 | `TURN_HOST` / `TURN_SECRET` / `TURN_TTL` | Phase 2 (WebRTC) — coturn host + shared secret for short-lived ICE creds |
+| `RELAY_URL` | Optional — base URL of the KXKM relay app. Scenes with their relay toggle on forward incoming text / images there (images downscaled). Unset = off. |
 
 Config and media live on the filesystem — there is no database server. On first
 boot with an empty store, existing top-level folders under `UPLOAD_PATH` are
