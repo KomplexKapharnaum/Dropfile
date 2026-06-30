@@ -224,6 +224,7 @@
                                     <button class="iconbtn" title="Prev" @click="transport(pl,'prev')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'prev'})}" x-html="icon('prev')"></button>
                                     <button class="iconbtn" title="Pause" @click="transport(pl,'pause')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'pause'})}" x-html="icon('pause')"></button>
                                     <button class="iconbtn" title="Next" @click="transport(pl,'next')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'next'})}" x-html="icon('next')"></button>
+                                    <button class="iconbtn" title="Stop (clear scene)" @click="stop(pl)" :class="{active: isStopped(pl), learned: consoleKey(pl.id,{type:'stop'})}" x-html="icon('stop')"></button>
                                     <button class="iconbtn" title="Blackout" @click="blackout(pl)" :class="{learned: consoleKey(pl.id,{type:'blackout'})}">⬛</button>
                                     <button class="iconbtn" title="Auto-play options" @click="toggleAutoplayOpts(pl)" x-html="icon('gear')"></button>
                                 </div>
@@ -325,9 +326,9 @@
     <div class="lb" x-show="lightbox.open" x-cloak @click="lbClose()">
         <button class="iconbtn lb-nav" @click.stop="lbPrev()" x-html="icon('left')"></button>
         <div class="lb-stage" @click.stop>
-            <template x-if="lbCurrent() && lbCurrent().type==='image'"><img :src="lbCurrent().url" alt=""></template>
-            <template x-if="lbCurrent() && lbCurrent().type==='video'"><video :src="lbCurrent().url" controls autoplay loop></video></template>
-            <template x-if="lbCurrent() && lbCurrent().type==='text'"><iframe class="lb-text" :src="lbCurrent().url" sandbox=""></iframe></template>
+            <template x-if="lightbox.open && lbCurrent() && lbCurrent().type==='image'"><img :src="lbCurrent().url" alt=""></template>
+            <template x-if="lightbox.open && lbCurrent() && lbCurrent().type==='video'"><video :src="lbCurrent().url" controls autoplay loop></video></template>
+            <template x-if="lightbox.open && lbCurrent() && lbCurrent().type==='text'"><iframe class="lb-text" :src="lbCurrent().url" sandbox=""></iframe></template>
         </div>
         <button class="iconbtn lb-nav" @click.stop="lbNext()" x-html="icon('right')"></button>
         <button class="iconbtn lb-close" @click.stop="lbClose()" x-html="icon('close')"></button>

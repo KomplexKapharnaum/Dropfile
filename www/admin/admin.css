@@ -25,7 +25,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 sys
 main { padding: 20px; max-width: 1180px; margin: 0 auto; }
 .page-head, .ws-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .page-head h1, .ws-head h1 { font-size: 20px; margin: 0; }
-.page-head h2 { font-size: 16px; margin: 0; }
+.page-head h2 { font-size: 18px; margin: 0; }
 .ws-head h1 { font-size: 22px; }
 
 /* buttons / inputs */
@@ -59,10 +59,10 @@ button .ic, .btn .ic { width: 15px; height: 15px; }
 .card-head h2 { margin: 0; font-size: 16px; }
 .actions { display: flex; gap: 6px; align-items: center; }
 
-/* ===== live control room ===== */
-.control-room { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 22px; }
-.cr-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.cr-head h2 { margin: 0; font-size: 16px; }
+/* ===== live control room (a section like Scenes — title outside, player columns are the cards) ===== */
+.control-room { margin: 24px 0 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+.cr-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.cr-head h2 { margin: 0; font-size: 18px; }
 .learn-toggle { border: 1px solid var(--line); }
 .learn-toggle.on { background: var(--accent); border-color: var(--accent); color: #06122a; font-weight: 600; }
 .attach-sel { max-width: 200px; }

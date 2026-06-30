@@ -38,7 +38,8 @@ const ICONS = {
     prev: '<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>',
     next: '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>',
     reload: '<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
-    restart: '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>'
+    restart: '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>',
+    stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>'
 };
 
 function adminApp() {
@@ -81,6 +82,10 @@ function adminApp() {
             catch (e) { this.publicUrl = location.origin; }
             if (!this.publicUrl) this.publicUrl = location.origin;
             await this.loadAll();
+            // history: we manage scroll ourselves so Back restores the prior view
+            if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+            window.addEventListener('popstate', (e) => this.applyState(e.state || this.parseHash(), { fromPop: true }));
+            this.go(this.parseHash(), { replace: true, initial: true });
             if (window.io) {
                 this.socket = io();
                 this.socket.on('connect', () => this.socket.emit('admin-join'));
@@ -107,19 +112,62 @@ function adminApp() {
             if (i >= 0) this.projects.splice(i, 1, project); else this.projects.push(project);
         },
 
-        // ---- navigation ----
-        openProject(p) { this.projectId = p.id; this.view = 'workspace'; this.consoleLearn = false; window.scrollTo(0, 0); (p.sources || []).forEach(s => this.ensureFiles(p, s)); },
-        goProjects() { this.view = 'projects'; this.projectId = null; },
-        goPlayers() { this.view = 'players'; },
-        goPlayerSettings(pl) {
-            this.view = 'players';
+        // ---- navigation + browser history ----------------------------------
+        // The three views (projects · players · workspace) are mirrored into the
+        // History API so the browser back/forward buttons work — e.g. workspace
+        // -> a player's settings -> Back returns to that workspace (and its scroll).
+        hashFor(s) {
+            if (s.view === 'workspace' && s.projectId) return '#/workspace/' + encodeURIComponent(s.projectId);
+            if (s.view === 'players') return '#/players';
+            return '#/projects';
+        },
+        parseHash() {
+            const m = (location.hash || '').match(/^#\/(projects|players|workspace)(?:\/([^/?]+))?/);
+            if (!m) return { view: 'projects' };
+            if (m[1] === 'workspace') return m[2] ? { view: 'workspace', projectId: decodeURIComponent(m[2]) } : { view: 'projects' };
+            return { view: m[1] };
+        },
+        // push (or replace) a history entry, then render it
+        go(state, opts = {}) {
+            // stash the outgoing view's scroll so Back can restore it
+            if (!opts.replace && history.state) {
+                try { history.replaceState(Object.assign({}, history.state, { scrollY: window.scrollY }), ''); } catch (e) {}
+            }
+            const data = { view: state.view || 'projects', projectId: state.projectId || null, playerId: state.playerId || null, scrollY: 0 };
+            try { history[opts.replace ? 'replaceState' : 'pushState'](data, '', this.hashFor(data)); } catch (e) {}
+            this.applyState(data, opts);
+        },
+        // render a history state (no history mutation) — used by go() and popstate
+        applyState(state, opts = {}) {
+            state = state || { view: 'projects' };
+            let view = state.view || 'projects';
+            let projectId = state.projectId || null;
+            if (view === 'workspace' && (!projectId || !this.projects.find(p => p.id === projectId))) { view = 'projects'; projectId = null; }
+            this.view = view;
+            this.projectId = projectId;
+            if (view === 'workspace') {
+                this.consoleLearn = false;
+                const p = this.project();
+                if (p) (p.sources || []).forEach(s => this.ensureFiles(p, s));
+            }
+            const focusId = (view === 'players') ? state.playerId : null;
             this.$nextTick(() => {
-                const el = document.querySelector(`[data-player="${pl.id}"]`);
-                if (!el) return;
-                el.scrollIntoView({ block: 'start', behavior: 'smooth' });
-                el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500);
+                if (opts.fromPop) window.scrollTo(0, state.scrollY || 0);
+                else if (focusId) this.focusPlayer(focusId, true);
+                else window.scrollTo(0, 0);
             });
         },
+        focusPlayer(playerId, animate) {
+            const el = document.querySelector(`[data-player="${playerId}"]`);
+            if (!el) return;
+            el.scrollIntoView({ block: 'start', behavior: animate ? 'smooth' : 'auto' });
+            if (animate) { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500); }
+        },
+
+        openProject(p) { this.go({ view: 'workspace', projectId: p.id }); },
+        goProjects() { this.go({ view: 'projects' }); },
+        goPlayers() { this.go({ view: 'players' }); },
+        goPlayerSettings(pl) { this.go({ view: 'players', playerId: pl.id }); },
 
         // ---- share modal ----
         openShare(url, title) { this.share = { open: true, url, title: title || '' }; },
@@ -200,9 +248,11 @@ function adminApp() {
         },
         openLightbox(s, i) { this.lightbox = { open: true, files: this.files[s.id] || [], index: i }; },
         lbCurrent() { return this.lightbox.files[this.lightbox.index] || null; },
-        lbNext() { const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index + 1) % n; },
-        lbPrev() { const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index - 1 + n) % n; },
-        lbClose() { this.lightbox.open = false; },
+        // halt the preview <video> so audio/playback can't run on in the background
+        lbStopVideo() { const v = document.querySelector('.lb-stage video'); if (v) { try { v.pause(); } catch (e) {} } },
+        lbNext() { this.lbStopVideo(); const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index + 1) % n; },
+        lbPrev() { this.lbStopVideo(); const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index - 1 + n) % n; },
+        lbClose() { this.lbStopVideo(); this.lightbox.open = false; },
 
         // ---- players (pool) ----
         createPlayer() { const name = (prompt('Player nickname', '') || '').trim(); if (!name) return; this.guard(async () => { await api('POST', '/players', { name }); await this.loadPlayers(); }); },
@@ -232,6 +282,9 @@ function adminApp() {
         autoplay(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'autoplay' }); api('POST', '/players/' + pl.id + '/command', { cmd: 'autoplay' }).then(() => this.loadPlayers()).catch(() => {}); },
         transport(pl, cmd) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'transport', cmd }); api('POST', '/players/' + pl.id + '/command', { cmd }).catch(() => {}); },
         blackout(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'blackout' }); api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {}); },
+        // Stop: clear the player's active scene (unselects it; also resets selectedName + drops any live stream)
+        stop(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'stop' }); this.guard(async () => { await api('PUT', '/players/' + pl.id + '/active', {}); await this.loadPlayers(); }); },
+        isStopped(pl) { return !pl.activeSourceId; },
         toggleAutoplayOpts(pl) { this.autoplayOpts[pl.id] = !this.autoplayOpts[pl.id]; },
 
         // ---- live status (from players) ----
@@ -242,7 +295,7 @@ function adminApp() {
             if (s.online === false) return 'offline';
             if (s.mode === 'stream') return '● live';
             if (s.mode === 'black') return '⬛ blackout';
-            if (s.mode === 'stopped') return 'stopped';
+            if (s.mode === 'stopped') return '⏹ stopped';
             if (s.mode === 'manual') return '▸ ' + (s.name || '?') + (s.paused ? ' · paused' : '');
             return '⟳ ' + (s.name || '?') + ' · ' + (((s.index | 0) + 1)) + '/' + (s.count || 0) + (s.paused ? ' · paused' : '');
         },
@@ -290,6 +343,7 @@ function adminApp() {
             else if (a.type === 'autoplay') api('POST', '/players/' + pl.id + '/command', { cmd: 'autoplay' }).catch(() => {});
             else if (a.type === 'transport') api('POST', '/players/' + pl.id + '/command', { cmd: a.cmd }).catch(() => {});
             else if (a.type === 'blackout') api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {});
+            else if (a.type === 'stop') api('PUT', '/players/' + pl.id + '/active', {}).then(() => this.loadPlayers()).catch(() => {});
         },
 
         // ---- player-local MIDI (Players page) ----
