@@ -14,7 +14,7 @@
 <div id="app" x-data="adminApp()" x-init="init()"
      @keydown.window.arrow-right="lightbox.open && lbNext()"
      @keydown.window.arrow-left="lightbox.open && lbPrev()"
-     @keydown.window.escape="lightbox.open ? lbClose() : (share.open && closeShare())">
+     @keydown.window.escape="lightbox.open ? lbClose() : (mediaModal.open ? closeMediaModal() : (share.open && closeShare()))">
 
     <input type="file" multiple x-ref="fileInput" @change="onUpload($event)" style="display:none">
 
@@ -63,7 +63,7 @@
         </div>
 
         <template x-for="pl in players" :key="pl.id">
-            <section class="card">
+            <section class="card" :data-player="pl.id">
                 <div class="card-head">
                     <div class="title-wrap">
                         <h2 x-text="pl.name"></h2>
@@ -153,6 +153,45 @@
                     <button class="iconbtn danger" title="Delete project" @click="deleteProject(project())" x-html="icon('trash')"></button>
                 </div>
 
+                <!-- SCENES & MEDIA -->
+                <section class="ws-scenes">
+                    <div class="page-head">
+                        <h2>Scenes &amp; media</h2>
+                        <button @click="addScene(project())"><span x-html="icon('plus')"></span> Scene</button>
+                    </div>
+                    <div class="scenes" :data-scenes="project().id">
+                        <template x-for="(s, idx) in project().sources" :key="s.id">
+                            <div class="scene-card" :class="{dragging: isSceneDragging(project(),s)}" :data-sid="s.id" @dragover.prevent="sceneDragOver(project(),idx)" @drop.prevent>
+                                <div class="sc-top">
+                                    <span class="sidx" draggable="true" title="Drag to reorder" @dragstart="sceneDragStart(project(),idx,$event)" @dragend="sceneDragEnd(project())" x-text="pad(idx+1)"></span>
+                                    <strong class="scene-name" x-text="s.name"></strong>
+                                    <button class="iconbtn" title="Rename scene" @click="renameScene(project(),s)" x-html="icon('pencil')"></button>
+                                    <span class="spacer"></span>
+                                    <button class="iconbtn" title="Share" @click="openShare(dropUrl(s), project().name + ' / ' + s.name)" x-html="icon('share')"></button>
+                                    <button class="iconbtn danger" title="Delete scene" @click="deleteScene(project(),s)" x-html="icon('trash')"></button>
+                                </div>
+                                <div class="sc-types">
+                                    <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(project(),s)" title="Accept all">All</button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(project(),s,'image')" title="Images" x-html="icon('image')"></button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(project(),s,'video')" title="Videos" x-html="icon('video')"></button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(project(),s,'text')" title="Text" x-html="icon('text')"></button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(project(),s,'stream')" title="Camera stream" x-html="icon('stream')"></button>
+                                    <select class="streammode" x-show="s.accept && s.accept.stream" @change="setStreamMode(project(),s,$event.target.value)" title="When multiple streamers join">
+                                        <option value="replace" :selected="s.streamMode!=='grid'">single</option>
+                                        <option value="grid" :selected="s.streamMode==='grid'">grid</option>
+                                    </select>
+                                </div>
+                                <button class="sc-media" @click="openMediaModal(project(),s)">
+                                    <span x-html="icon('image')"></span>
+                                    <span x-text="s.count + (s.count===1?' media':' medias')"></span>
+                                    <span class="muted">· manage</span>
+                                </button>
+                            </div>
+                        </template>
+                        <p class="muted" x-show="project().sources.length===0">No scenes yet — add one.</p>
+                    </div>
+                </section>
+
                 <!-- LIVE CONTROL ROOM -->
                 <section class="control-room">
                     <div class="cr-head">
@@ -175,6 +214,7 @@
                                 <div class="cr-col-head">
                                     <strong x-text="pl.name"></strong>
                                     <button class="iconbtn" title="Open display" @click="openShare(playerUrl(pl), pl.name)" x-html="icon('share')"></button>
+                                    <button class="iconbtn" title="Player settings" @click="goPlayerSettings(pl)" x-html="icon('gear')"></button>
                                     <button class="iconbtn danger" title="Detach" @click="detachPlayer(project(), pl)" x-html="icon('close')"></button>
                                 </div>
                                 <div class="cr-status" :class="statusClass(pl)" x-text="statusLabel(pl)"></div>
@@ -219,73 +259,50 @@
                     </div>
                     <p class="muted hint" x-show="consoleLearn">Click a scene / clip / transport / blackout, then press a MIDI pad to bind it for that player.</p>
                 </section>
-
-                <!-- SCENES & MEDIA -->
-                <section class="ws-scenes">
-                    <div class="page-head">
-                        <h2>Scenes &amp; media</h2>
-                        <button @click="addScene(project())"><span x-html="icon('plus')"></span> Scene</button>
-                    </div>
-                    <div class="scenes" :data-scenes="project().id">
-                        <template x-for="(s, idx) in project().sources" :key="s.id">
-                            <div class="scene" :class="{dragging: isSceneDragging(project(),s)}" :data-sid="s.id" @dragover.prevent="sceneDragOver(project(),idx)" @drop.prevent>
-                                <div class="scene-head" @click="toggleExpand(project(),s)">
-                                    <span class="sidx" draggable="true" title="Drag to reorder" @click.stop @dragstart="sceneDragStart(project(),idx,$event)" @dragend="sceneDragEnd(project())" x-text="pad(idx+1)"></span>
-                                    <strong class="scene-name" x-text="s.name"></strong>
-                                    <button class="iconbtn" title="Rename scene" @click.stop="renameScene(project(),s)" x-html="icon('pencil')"></button>
-                                    <span class="typetoggle" @click.stop>
-                                        <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(project(),s)" title="Accept all">All</button>
-                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(project(),s,'image')" title="Images" x-html="icon('image')"></button>
-                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(project(),s,'video')" title="Videos" x-html="icon('video')"></button>
-                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(project(),s,'text')" title="Text" x-html="icon('text')"></button>
-                                        <button class="iconbtn tchip" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(project(),s,'stream')" title="Camera stream" x-html="icon('stream')"></button>
-                                        <select class="streammode" x-show="s.accept && s.accept.stream" @change="setStreamMode(project(),s,$event.target.value)" title="When multiple streamers join">
-                                            <option value="replace" :selected="s.streamMode!=='grid'">single</option>
-                                            <option value="grid" :selected="s.streamMode==='grid'">grid</option>
-                                        </select>
-                                    </span>
-                                    <span class="spacer"></span>
-                                    <span class="count" x-text="s.count + (s.count===1?' file':' files')"></span>
-                                    <button class="iconbtn" title="Share" @click.stop="openShare(dropUrl(s), project().name + ' / ' + s.name)" x-html="icon('share')"></button>
-                                    <button class="iconbtn chev" :class="{open: expanded[s.id]}" x-html="icon('down')"></button>
-                                    <button class="iconbtn danger" title="Delete scene" @click.stop="deleteScene(project(),s)" x-html="icon('trash')"></button>
-                                </div>
-
-                                <div class="scene-body" x-show="expanded[s.id]" x-cloak>
-                                    <div class="grid-tools">
-                                        <button @click="addMedia(project(),s)"><span x-html="icon('plus')"></span> Add media</button>
-                                        <label class="chk small"><input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(project(),s)"> uploaders delete own</label>
-                                        <span class="muted" x-show="uploading[s.id]">uploading…</span>
-                                        <span class="spacer"></span>
-                                        <template x-if="selCount(s) > 0">
-                                            <span class="bulk">
-                                                <span class="muted" x-text="selCount(s)+' selected'"></span>
-                                                <button @click="bulk('archive',project(),s)"><span x-html="icon('archive')"></span> Archive</button>
-                                                <button class="danger" @click="bulk('delete',project(),s)"><span x-html="icon('trash')"></span> Delete</button>
-                                            </span>
-                                        </template>
-                                    </div>
-                                    <p class="muted hint" x-show="(files[s.id]||[]).length" x-text="selCount(s)>0 ? 'Click to select · drag to reorder' : 'Click to preview · drag to reorder'"></p>
-                                    <div class="grid" :data-grid="s.id">
-                                        <template x-for="(f, idx) in filesOf(s)" :key="f.name">
-                                            <div class="tile" :class="{sel: isSel(s,f.name), dragging: isDragging(s,f)}" :data-name="f.name" draggable="true"
-                                                 @dragstart="mediaDragStart(s,idx,$event)" @dragover.prevent="mediaDragOver(s,idx)" @drop.prevent @dragend="mediaDragEnd(project(),s)" @click="tileClick(s,idx)">
-                                                <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
-                                                <img :src="f.thumb" loading="lazy" alt="">
-                                                <span class="vbadge" x-show="f.type==='video'">▶</span>
-                                            </div>
-                                        </template>
-                                        <p class="muted" x-show="(files[s.id]||[]).length===0">Empty — add media or share the drop link.</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-                        <p class="muted" x-show="project().sources.length===0">No scenes yet — add one.</p>
-                    </div>
-                </section>
             </div>
         </template>
     </main>
+
+    <!-- ===================== MEDIA MODAL ===================== -->
+    <div class="modal" x-show="mediaModal.open" x-cloak @click="closeMediaModal()">
+        <div class="modal-box media-box" @click.stop>
+            <template x-for="s in (mediaModalScene() ? [mediaModalScene()] : [])" :key="s.id">
+                <div>
+                    <div class="media-box-head">
+                        <strong class="scene-name" x-text="s.name"></strong>
+                        <span class="count" x-text="s.count + (s.count===1?' file':' files')"></span>
+                        <span class="spacer"></span>
+                        <button class="iconbtn" title="Close" @click="closeMediaModal()" x-html="icon('close')"></button>
+                    </div>
+                    <div class="grid-tools">
+                        <button @click="addMedia(project(),s)"><span x-html="icon('plus')"></span> Add media</button>
+                        <label class="chk small"><input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(project(),s)"> uploaders delete own</label>
+                        <span class="muted" x-show="uploading[s.id]">uploading…</span>
+                        <span class="spacer"></span>
+                        <template x-if="selCount(s) > 0">
+                            <span class="bulk">
+                                <span class="muted" x-text="selCount(s)+' selected'"></span>
+                                <button @click="bulk('archive',project(),s)"><span x-html="icon('archive')"></span> Archive</button>
+                                <button class="danger" @click="bulk('delete',project(),s)"><span x-html="icon('trash')"></span> Delete</button>
+                            </span>
+                        </template>
+                    </div>
+                    <p class="muted hint" x-show="(files[s.id]||[]).length" x-text="selCount(s)>0 ? 'Click to select · drag to reorder' : 'Click to preview · drag to reorder'"></p>
+                    <div class="grid" :data-grid="s.id">
+                        <template x-for="(f, idx) in filesOf(s)" :key="f.name">
+                            <div class="tile" :class="{sel: isSel(s,f.name), dragging: isDragging(s,f)}" :data-name="f.name" draggable="true"
+                                 @dragstart="mediaDragStart(s,idx,$event)" @dragover.prevent="mediaDragOver(s,idx)" @drop.prevent @dragend="mediaDragEnd(project(),s)" @click="tileClick(s,idx)">
+                                <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
+                                <img :src="f.thumb" loading="lazy" alt="">
+                                <span class="vbadge" x-show="f.type==='video'">▶</span>
+                            </div>
+                        </template>
+                        <p class="muted" x-show="(files[s.id]||[]).length===0">Empty — add media or share the drop link.</p>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
 
     <!-- ===================== SHARE MODAL ===================== -->
     <div class="modal" x-show="share.open" x-cloak @click="closeShare()">

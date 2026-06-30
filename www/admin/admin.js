@@ -54,6 +54,7 @@ function adminApp() {
         uploading: {}, uploadTarget: null,
         // overlays
         share: { open: false, url: '', title: '' },
+        mediaModal: { open: false, pid: null, sid: null },
         lightbox: { open: false, files: [], index: 0 },
         // drag
         drag: { sid: null, from: -1, name: null },
@@ -110,6 +111,15 @@ function adminApp() {
         openProject(p) { this.projectId = p.id; this.view = 'workspace'; this.consoleLearn = false; window.scrollTo(0, 0); (p.sources || []).forEach(s => this.ensureFiles(p, s)); },
         goProjects() { this.view = 'projects'; this.projectId = null; },
         goPlayers() { this.view = 'players'; },
+        goPlayerSettings(pl) {
+            this.view = 'players';
+            this.$nextTick(() => {
+                const el = document.querySelector(`[data-player="${pl.id}"]`);
+                if (!el) return;
+                el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500);
+            });
+        },
 
         // ---- share modal ----
         openShare(url, title) { this.share = { open: true, url, title: title || '' }; },
@@ -152,6 +162,9 @@ function adminApp() {
         isSceneDragging(p, s) { return this.sceneDrag.pid === p.id && this.sceneDrag.sid === s.id; },
 
         // ---- media explorer ----
+        openMediaModal(p, s) { this.mediaModal = { open: true, pid: p.id, sid: s.id }; this.ensureFiles(p, s); },
+        closeMediaModal() { this.mediaModal.open = false; },
+        mediaModalScene() { const p = this.project(); if (!p || !this.mediaModal.open) return null; return p.sources.find(s => s.id === this.mediaModal.sid) || null; },
         toggleExpand(p, s) { this.expanded[s.id] = !this.expanded[s.id]; if (this.expanded[s.id] && !this.files[s.id]) this.loadFiles(p, s); },
         async loadFiles(p, s) { await this.guard(async () => { const r = await api('GET', `/projects/${p.id}/sources/${s.id}/files`); this.files[s.id] = r.files; this.sel[s.id] = {}; }); },
         filesOf(s) { return this.files[s.id] || []; },
