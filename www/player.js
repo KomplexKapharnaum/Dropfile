@@ -475,7 +475,7 @@
     // ---- camera takeover ----
     function updateStreamMembership() {
         if (!receiver) return;
-        if (active && active.stream && active.sourceId) receiver.join(active.sourceId);
+        if (active && active.stream && active.sceneId) receiver.join(active.sceneId);
         else receiver.leave();
     }
 

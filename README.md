@@ -2,15 +2,20 @@
 
 Dropfile turns drop-folders and displays into a small **media controller**:
 
-- **Players** — a top-level pool of display surfaces. Each player has its own
-  URL (+QR) and its own hardware/scaler settings (forced resolution, even-line
-  suppression, position, fit, rotation). A player is attached to one or more
-  projects and points at one **active source** at a time. Re-pointing it is a
-  live action — the URL and scaler config belong to the *screen*, not the content.
+- **Machines** — a top-level pool of physical boxes (Raspberry Pi, mini-PC…).
+  Each machine has a static name, a device type (from an editable list) and a
+  **fixed kiosk URL** (+QR) set once on the box — it never changes across projects.
+- **Stations** — per project, a machine bound into the show with its own **display
+  surface** (forced resolution, even-line suppression, position, fit, rotation),
+  playback options and MIDI map, plus a rig nickname ("Totem screen", "Cart 1").
+  The same box is a different station in each project — the surface belongs to the
+  *screen-in-this-show*, the URL to the *box*. Activating a scene on a station
+  drives its machine, taking it over from any other project using that box.
 - **Projects / workspaces** — content groupings. The admin opens a project into a
-  **workspace**: a live **control room** (one column per attached player — click a
-  scene to make it active, click a clip to show it, transport + blackout, console
-  **MIDI learn**) plus scenes & media management.
+  **workspace**: a live **control room** (one column per **station** — click a
+  scene to make it active, click a clip to show it, transport + stop + blackout,
+  console **MIDI learn**; a gear opens the station's surface/playback settings)
+  plus scenes & media management.
 - **Scenes** — a folder of media inside a project. Every scene is reachable by its
   **URL** (+QR via the share button); access is controlled simply by whether you
   share that link. The admin can add media and **reorder** it (drag); the chosen
@@ -27,9 +32,10 @@ Dropfile turns drop-folders and displays into a small **media controller**:
 
 Admin changes are pushed live to every open player over WebSocket.
 
-See [ROADMAP.md](ROADMAP.md) for the full design and status. Phases 1–4 (core,
-WebRTC camera takeover, MIDI, workspaces/control-room) are implemented — the WebRTC
-camera takeover is code-complete but still needs a reachable coturn, verified at `/diag`.
+See [ROADMAP.md](ROADMAP.md) for the full design and status. Phases 1–5 (core,
+WebRTC camera takeover, MIDI, workspaces/control-room, machines+stations) are
+implemented — the WebRTC camera takeover is code-complete but still needs a
+reachable coturn, verified at `/diag`.
 
 ## Requirements
 
@@ -75,10 +81,10 @@ npm start                            # node server.js
 ## URLs
 
 - `/admin` — console (password-gated): a **Projects** grid → open a **workspace**
-  (live control room + scenes/media), and a **Players** pool page (configure
-  screens, share display URL). `/diag` for WebRTC.
+  (live control room + scenes/media), and a **Machines** pool page (configure
+  boxes, device types, share the kiosk URL). `/diag` for WebRTC.
 - `/d/<dropToken>` — a scene's **KXKM chat** drop page (open via its QR/link).
-- `/p/<playerToken>` — a player display (open on the target screen).
+- `/p/<machineToken>` — a machine's kiosk display (open on the box; URL is fixed).
 
 The old `/admin` Filebrowser and the `/diaporama?folder=…` page are gone;
 `/diaporama` now redirects to `/admin`.
@@ -91,16 +97,17 @@ server.js            # loads app + listens on FRONTEND_PORT
 lib/store.js         # atomic JSON store (db.json)
 lib/ids.js           # id / token / slug helpers
 lib/media.js         # extensions, sanitisation, mtime listing
-lib/model.js         # queries over the store (find by token, source dirs, …)
-lib/playlist.js      # resolve a player's active source -> media playlist
+lib/defaults.js      # machine/station defaults + kiosk-settings composition
+lib/model.js         # queries over the store (machines, stations, scenes)
+lib/playlist.js      # resolve a machine's active station -> settings + playlist
 lib/thumbs.js        # sharp (images) + ffmpeg (video posters) thumbnail cache
 lib/auth.js          # HTTP Basic middleware (ADMIN_PASSWORD)
 lib/turn.js          # WebRTC ICE: short-lived coturn credentials (TURN REST)
-lib/migrate.js       # import legacy folders + idempotent store upgrades
+lib/migrate.js       # import legacy folders + split players->machines/stations
 routes/drop.js       # /d, /api/drop/* (upload, text, blind "my uploads")
-routes/player.js     # /p, /api/player/*, /diag, /api/ice
-routes/admin.js      # /admin/api/* (+ static admin SPA), behind auth
-sockets/index.js     # player rooms + WebRTC stream signaling (offer/answer/ice)
+routes/player.js     # /p, /api/player/* (machine kiosk), /diag, /api/ice
+routes/admin.js      # /admin/api/* machines + per-project stations + scenes
+sockets/index.js     # machine rooms + WebRTC stream signaling (offer/answer/ice)
 www/                 # admin SPA (Alpine), drop, player (canvas engine),
                      #   camera.js (sender), receiver.js (player), midi.js, diag.html
 ```

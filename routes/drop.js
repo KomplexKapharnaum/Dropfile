@@ -77,7 +77,7 @@ module.exports = function (ctx) {
         // push to any player currently displaying this source
         if (type) {
             const payload = { name: filename, type, url: model.mediaUrl(req.dropProject, req.dropSource, filename) };
-            for (const p of model.playersForSource(sid)) {
+            for (const p of model.machinesForScene(sid)) {
                 io.to('player:' + p.token).emit('new-media', payload);
             }
         }
@@ -104,7 +104,7 @@ module.exports = function (ctx) {
 
         // push to any player currently displaying this source (fresh-queue)
         const payload = { name: filename, type: 'text', url: model.mediaUrl(req.dropProject, req.dropSource, filename) };
-        for (const p of model.playersForSource(sid)) io.to('player:' + p.token).emit('new-media', payload);
+        for (const p of model.machinesForScene(sid)) io.to('player:' + p.token).emit('new-media', payload);
         res.json({ ok: true, fileId });
     });
 

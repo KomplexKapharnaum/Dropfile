@@ -83,15 +83,26 @@ class CameraSender {
     }
 
     async flip() {
-        this.facing = this.facing === 'environment' ? 'user' : 'environment';
-        const ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: this.facing }, audio: false });
-        const nv = ns.getVideoTracks()[0];
+        const next = this.facing === 'environment' ? 'user' : 'environment';
+        // Release the current camera first: phones that expose one camera at a
+        // time hand back the *same* device if asked while it's still open.
+        const old = this.stream.getVideoTracks()[0];
+        if (old) { this.stream.removeTrack(old); old.stop(); }
+        let nv;
+        try {
+            // {exact} forces the switch — a bare facingMode is a hint Android ignores.
+            const ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: next } }, audio: false });
+            nv = ns.getVideoTracks()[0];
+        } catch (e) {
+            // No camera matched exact (or it failed) — re-acquire with a soft hint.
+            const ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: next }, audio: false });
+            nv = ns.getVideoTracks()[0];
+        }
+        this.facing = next;
         for (const pc of Object.values(this.pcs)) {
             const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
             if (sender) sender.replaceTrack(nv);
         }
-        const old = this.stream.getVideoTracks()[0];
-        if (old) { this.stream.removeTrack(old); old.stop(); }
         this.stream.addTrack(nv);
         if (this.preview) this.preview.srcObject = this.stream;
     }

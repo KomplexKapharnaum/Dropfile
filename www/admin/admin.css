@@ -178,3 +178,26 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .lb-nav { color: #fff; background: rgba(255,255,255,.08); border-radius: 50%; padding: 12px; border: none; }
 .lb-nav .ic { width: 26px; height: 26px; }
 .lb-close { position: fixed; top: 16px; right: 16px; color: #fff; background: rgba(255,255,255,.08); border: none; border-radius: 50%; padding: 10px; }
+
+/* ===== machines pool ===== */
+.machines { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+.machine-card .mc-ico { color: var(--muted); display: flex; }
+.machine-card .mc-ico .ic { width: 18px; height: 18px; }
+.machine-body { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.machine-body .field input[type=text], .machine-body .field select { width: 100%; }
+.machine-meta { font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ===== control room: station columns ===== */
+.cr-col-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cr-col-title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-machine { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-col.busy { opacity: .75; }
+.cr-col.busy .cr-status { border-style: dashed; }
+
+/* ===== station settings + device types modals ===== */
+.station-box { width: 560px; max-width: 92vw; max-height: 88vh; overflow-y: auto; text-align: left; }
+.station-config { display: flex; flex-direction: column; gap: 12px; }
+.types-box { width: 420px; max-width: 92vw; text-align: left; }
+.types-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.type-row { display: flex; gap: 8px; align-items: center; }
+.type-row input { flex: 1; }

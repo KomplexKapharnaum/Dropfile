@@ -1,4 +1,6 @@
-// Public player display routes (token-secured).
+// Public kiosk routes (token-secured). The token identifies a Machine (a
+// physical box). What it shows + its surface come from the machine's active
+// Station, composed server-side so the kiosk front-end (player.js) is unchanged.
 const express = require('express');
 const path = require('path');
 const store = require('../lib/store');
@@ -23,38 +25,40 @@ module.exports = function (ctx) {
         res.json({ ice: turn.iceServers() });
     });
 
-    // full resolved state: settings + active source + playlist + ICE servers
+    // full resolved state: composed settings + active scene + playlist + ICE
     router.get('/api/player/:token', (req, res) => {
-        const player = model.findPlayerByToken(req.params.token);
-        if (!player) return res.status(404).json({ error: 'unknown player' });
+        const machine = model.findMachineByToken(req.params.token);
+        if (!machine) return res.status(404).json({ error: 'unknown player' });
         res.json({
-            id: player.id,
-            name: player.name,
-            token: player.token,
-            settings: player.settings,
-            selectedName: player.selectedName || null,
-            active: playlistLib.activeInfo(player),
-            media: playlistLib.playlist(UPLOAD_PATH, player),
+            id: machine.id,
+            name: machine.name,
+            token: machine.token,
+            settings: playlistLib.settingsFor(machine),
+            selectedName: machine.selectedName || null,
+            active: playlistLib.activeInfo(machine),
+            media: playlistLib.playlist(UPLOAD_PATH, machine),
             ice: turn.iceServers()
         });
     });
 
     // playlist only (used for reloads)
     router.get('/api/player/:token/playlist', (req, res) => {
-        const player = model.findPlayerByToken(req.params.token);
-        if (!player) return res.status(404).json({ error: 'unknown player' });
-        res.json({ media: playlistLib.playlist(UPLOAD_PATH, player) });
+        const machine = model.findMachineByToken(req.params.token);
+        if (!machine) return res.status(404).json({ error: 'unknown player' });
+        res.json({ media: playlistLib.playlist(UPLOAD_PATH, machine) });
     });
 
-    // persist the MIDI map from the player side (token-secured, no admin auth)
+    // persist the MIDI map learned on the kiosk -> the active station's map
     router.put('/api/player/:token/midi', (req, res) => {
-        const player = model.findPlayerByToken(req.params.token);
-        if (!player) return res.status(404).json({ error: 'unknown player' });
-        player.settings = player.settings || {};
-        player.settings.midi = player.settings.midi || { map: {} };
-        if (req.body.map && typeof req.body.map === 'object') player.settings.midi.map = req.body.map;
-        store.save();
-        ctx.io.to('player:' + player.token).emit('settings', player.settings);
+        const machine = model.findMachineByToken(req.params.token);
+        if (!machine) return res.status(404).json({ error: 'unknown player' });
+        const a = playlistLib.activeOf(machine);
+        if (a && a.station) {
+            a.station.midi = a.station.midi || { map: {} };
+            if (req.body.map && typeof req.body.map === 'object') a.station.midi.map = req.body.map;
+            store.save();
+            ctx.io.to('player:' + machine.token).emit('settings', playlistLib.settingsFor(machine));
+        }
         res.json({ ok: true });
     });
 

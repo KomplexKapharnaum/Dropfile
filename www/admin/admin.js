@@ -1,5 +1,7 @@
-// Admin SPA (Alpine.js). Views: 'projects' (landing) · 'players' (pool) ·
-// 'workspace' (one project: live control room + scenes/media). All API calls go
+// Admin SPA (Alpine.js). Views: 'projects' (landing) · 'machines' (pool of
+// physical boxes) · 'workspace' (one project: live control room + scenes/media).
+// A Machine is a box (stable kiosk URL); a Station is a Machine bound into one
+// project with its own surface / playback / MIDI + nickname. All API calls go
 // under /admin/api (shares the Basic-auth protection space).
 async function api(method, pathname, body) {
     const opts = { method, headers: {} };
@@ -39,7 +41,9 @@ const ICONS = {
     next: '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>',
     reload: '<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
     restart: '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>',
-    stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>'
+    stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
+    cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>',
+    monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>'
 };
 
 function adminApp() {
@@ -48,7 +52,8 @@ function adminApp() {
         projectId: null,
         publicUrl: '',
         projects: [],
-        players: [],
+        machines: [],
+        deviceTypes: [],
         toast: '',
         // scene/media explorer state (keyed by scene id)
         expanded: {}, files: {}, sel: {},
@@ -56,12 +61,15 @@ function adminApp() {
         // overlays
         share: { open: false, url: '', title: '' },
         mediaModal: { open: false, pid: null, sid: null },
+        stationModal: { open: false, pid: null, sid: null },
+        typesModal: { open: false },
+        typesEdit: [],
         lightbox: { open: false, files: [], index: 0 },
         // drag
         drag: { sid: null, from: -1, name: null },
         sceneDrag: { pid: null, from: -1, sid: null },
         // MIDI
-        midiBus: null, midiPorts: [], consoleLearn: false, midiLive: null,
+        midiBus: null, midiPorts: [], consoleLearn: false,
         transportTargets: [
             { cmd: 'restart', label: 'Restart', icon: 'restart' },
             { cmd: 'prev', label: 'Prev', icon: 'prev' },
@@ -70,9 +78,8 @@ function adminApp() {
             { cmd: 'next', label: 'Next', icon: 'next' },
             { cmd: 'reload', label: 'Reload', icon: 'reload' }
         ],
-        paused: {},
         socket: null, status: {}, autoScroll: true, autoplayOpts: {},
-        playerMidiMedia: {},   // player id -> active scene files (players page, local MIDI)
+        stationMidiMedia: {},   // station id -> active scene files (station modal, local MIDI)
 
         icon(name) { return svgIcon(ICONS[name] || ''); },
         pad(n) { return String(n).padStart(2, '0'); },
@@ -90,22 +97,20 @@ function adminApp() {
                 this.socket = io();
                 this.socket.on('connect', () => this.socket.emit('admin-join'));
                 this.socket.on('status-snapshot', (snap) => { this.status = Object.assign({}, snap || {}); });
-                this.socket.on('player-status', (m) => { if (m && m.playerId) { this.status[m.playerId] = m.status; this.maybeScroll(m.playerId); } });
+                this.socket.on('player-status', (m) => { if (m && m.machineId) { this.status[m.machineId] = m.status; this.maybeScroll(m.machineId); } });
             }
         },
         notify(m) { this.toast = m; setTimeout(() => { if (this.toast === m) this.toast = ''; }, 2000); },
         async guard(fn) { try { await fn(); } catch (e) { this.notify('Error: ' + e.message); } },
         base() { return (this.publicUrl || location.origin).replace(/\/$/, ''); },
         dropUrl(s) { return this.base() + '/d/' + s.dropToken; },
-        playerUrl(pl) { return this.base() + '/p/' + pl.token; },
+        machineUrl(m) { return this.base() + '/p/' + m.token; },
         qrPng(d) { return '/admin/api/qr?type=png&data=' + encodeURIComponent(d); },
 
-        async loadAll() { await this.loadProjects(); await this.loadPlayers(); },
+        async loadAll() { await this.loadProjects(); await this.loadMachines(); await this.loadDeviceTypes(); },
         async loadProjects() { this.projects = (await api('GET', '/projects')).projects; },
-        async loadPlayers() {
-            this.players = (await api('GET', '/players')).players;
-            this.players.forEach(pl => { if (pl.activeSourceId) this.loadPlayerMidiMedia(pl); });
-        },
+        async loadMachines() { this.machines = (await api('GET', '/machines')).machines; },
+        async loadDeviceTypes() { this.deviceTypes = (await api('GET', '/device-types')).deviceTypes || []; },
         project() { return this.projects.find(p => p.id === this.projectId) || null; },
         replaceProject(project) {
             const i = this.projects.findIndex(x => x.id === project.id);
@@ -113,31 +118,27 @@ function adminApp() {
         },
 
         // ---- navigation + browser history ----------------------------------
-        // The three views (projects · players · workspace) are mirrored into the
-        // History API so the browser back/forward buttons work — e.g. workspace
-        // -> a player's settings -> Back returns to that workspace (and its scroll).
+        // projects · machines · workspace mirrored to the History API so back/
+        // forward work (e.g. workspace -> machines -> Back returns to the workspace).
         hashFor(s) {
             if (s.view === 'workspace' && s.projectId) return '#/workspace/' + encodeURIComponent(s.projectId);
-            if (s.view === 'players') return '#/players';
+            if (s.view === 'machines') return '#/machines';
             return '#/projects';
         },
         parseHash() {
-            const m = (location.hash || '').match(/^#\/(projects|players|workspace)(?:\/([^/?]+))?/);
+            const m = (location.hash || '').match(/^#\/(projects|machines|workspace)(?:\/([^/?]+))?/);
             if (!m) return { view: 'projects' };
             if (m[1] === 'workspace') return m[2] ? { view: 'workspace', projectId: decodeURIComponent(m[2]) } : { view: 'projects' };
             return { view: m[1] };
         },
-        // push (or replace) a history entry, then render it
         go(state, opts = {}) {
-            // stash the outgoing view's scroll so Back can restore it
             if (!opts.replace && history.state) {
                 try { history.replaceState(Object.assign({}, history.state, { scrollY: window.scrollY }), ''); } catch (e) {}
             }
-            const data = { view: state.view || 'projects', projectId: state.projectId || null, playerId: state.playerId || null, scrollY: 0 };
+            const data = { view: state.view || 'projects', projectId: state.projectId || null, scrollY: 0 };
             try { history[opts.replace ? 'replaceState' : 'pushState'](data, '', this.hashFor(data)); } catch (e) {}
             this.applyState(data, opts);
         },
-        // render a history state (no history mutation) — used by go() and popstate
         applyState(state, opts = {}) {
             state = state || { view: 'projects' };
             let view = state.view || 'projects';
@@ -150,24 +151,11 @@ function adminApp() {
                 const p = this.project();
                 if (p) (p.sources || []).forEach(s => this.ensureFiles(p, s));
             }
-            const focusId = (view === 'players') ? state.playerId : null;
-            this.$nextTick(() => {
-                if (opts.fromPop) window.scrollTo(0, state.scrollY || 0);
-                else if (focusId) this.focusPlayer(focusId, true);
-                else window.scrollTo(0, 0);
-            });
+            this.$nextTick(() => { window.scrollTo(0, opts.fromPop ? (state.scrollY || 0) : 0); });
         },
-        focusPlayer(playerId, animate) {
-            const el = document.querySelector(`[data-player="${playerId}"]`);
-            if (!el) return;
-            el.scrollIntoView({ block: 'start', behavior: animate ? 'smooth' : 'auto' });
-            if (animate) { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500); }
-        },
-
         openProject(p) { this.go({ view: 'workspace', projectId: p.id }); },
         goProjects() { this.go({ view: 'projects' }); },
-        goPlayers() { this.go({ view: 'players' }); },
-        goPlayerSettings(pl) { this.go({ view: 'players', playerId: pl.id }); },
+        goMachines() { this.go({ view: 'machines' }); },
 
         // ---- share modal ----
         openShare(url, title) { this.share = { open: true, url, title: title || '' }; },
@@ -213,7 +201,6 @@ function adminApp() {
         openMediaModal(p, s) { this.mediaModal = { open: true, pid: p.id, sid: s.id }; this.ensureFiles(p, s); },
         closeMediaModal() { this.mediaModal.open = false; },
         mediaModalScene() { const p = this.project(); if (!p || !this.mediaModal.open) return null; return p.sources.find(s => s.id === this.mediaModal.sid) || null; },
-        toggleExpand(p, s) { this.expanded[s.id] = !this.expanded[s.id]; if (this.expanded[s.id] && !this.files[s.id]) this.loadFiles(p, s); },
         async loadFiles(p, s) { await this.guard(async () => { const r = await api('GET', `/projects/${p.id}/sources/${s.id}/files`); this.files[s.id] = r.files; this.sel[s.id] = {}; }); },
         filesOf(s) { return this.files[s.id] || []; },
         ensureFiles(p, s) { if (!this.files[s.id]) this.loadFiles(p, s); },
@@ -248,49 +235,62 @@ function adminApp() {
         },
         openLightbox(s, i) { this.lightbox = { open: true, files: this.files[s.id] || [], index: i }; },
         lbCurrent() { return this.lightbox.files[this.lightbox.index] || null; },
-        // halt the preview <video> so audio/playback can't run on in the background
         lbStopVideo() { const v = document.querySelector('.lb-stage video'); if (v) { try { v.pause(); } catch (e) {} } },
         lbNext() { this.lbStopVideo(); const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index + 1) % n; },
         lbPrev() { this.lbStopVideo(); const n = this.lightbox.files.length; if (n) this.lightbox.index = (this.lightbox.index - 1 + n) % n; },
         lbClose() { this.lbStopVideo(); this.lightbox.open = false; },
 
-        // ---- players (pool) ----
-        createPlayer() { const name = (prompt('Player nickname', '') || '').trim(); if (!name) return; this.guard(async () => { await api('POST', '/players', { name }); await this.loadPlayers(); }); },
-        renamePlayer(pl) { const name = prompt('Player name', pl.name); if (!name) return; this.guard(async () => { await api('PUT', '/players/' + pl.id, { name }); await this.loadPlayers(); }); },
-        deletePlayer(pl) { if (!confirm('Delete player "' + pl.name + '"?')) return; this.guard(async () => { await api('DELETE', '/players/' + pl.id); await this.loadAll(); }); },
-        saveSettings(pl) { const settings = Object.assign({}, pl.settings); delete settings.midi; this.guard(async () => { await api('PUT', '/players/' + pl.id + '/settings', { settings }); this.notify('Applied live'); }); if (pl.settings.playMode === 'midi') this.loadPlayerMidiMedia(pl); },
+        // ---- machines (pool of physical boxes) ----
+        createMachine() { const name = (prompt('Machine name (the label on the box)', '') || '').trim(); if (!name) return; this.guard(async () => { await api('POST', '/machines', { name }); await this.loadMachines(); }); },
+        renameMachine(m) { const name = prompt('Machine name', m.name); if (!name) return; this.guard(async () => { const r = await api('PUT', '/machines/' + m.id, { name }); this.replaceMachine(r.machine); }); },
+        deleteMachine(m) { if (!confirm('Delete machine "' + m.name + '"? It will be removed from every project that uses it.')) return; this.guard(async () => { await api('DELETE', '/machines/' + m.id); await this.loadAll(); }); },
+        saveMachine(m) { this.guard(async () => { const r = await api('PUT', '/machines/' + m.id, { type: m.type || '', description: m.description || '' }); this.replaceMachine(r.machine); this.notify('Saved'); }); },
+        replaceMachine(machine) { const i = this.machines.findIndex(x => x.id === machine.id); if (i >= 0) this.machines.splice(i, 1, machine); else this.machines.push(machine); },
 
-        // ---- control room (workspace) ----
-        attachedPlayers(p) { return this.players.filter(pl => (pl.projectIds || []).includes(p.id)); },
-        availablePlayers(p) { return this.players.filter(pl => !(pl.projectIds || []).includes(p.id)); },
-        attachPlayer(p, plId) { if (!plId) return; this.guard(async () => { await api('POST', '/players/' + plId + '/attach', { projectId: p.id }); await this.loadPlayers(); }); },
-        detachPlayer(p, pl) { this.guard(async () => { await api('POST', '/players/' + pl.id + '/detach', { projectId: p.id }); await this.loadPlayers(); }); },
-        isActiveScene(pl, p, s) { return pl.activeProjectId === p.id && pl.activeSourceId === s.id; },
-        playScene(p, pl, s) {
-            if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'scene', sceneId: s.id });
-            this.guard(async () => { await api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: s.id }); await this.loadPlayers(); this.ensureFiles(p, s); });
+        // ---- device types (editable list) ----
+        openTypes() { this.typesEdit = (this.deviceTypes || []).slice(); this.typesModal.open = true; },
+        closeTypes() { this.typesModal.open = false; },
+        addType() { this.typesEdit.push(''); },
+        removeType(i) { this.typesEdit.splice(i, 1); },
+        saveTypes() { this.guard(async () => { const r = await api('PUT', '/device-types', { deviceTypes: this.typesEdit }); this.deviceTypes = r.deviceTypes; this.typesModal.open = false; this.notify('Device types saved'); }); },
+
+        // ---- control room: stations (in the project serialization) ----
+        availableMachines(p) { const used = new Set((p.stations || []).map(st => st.machineId)); return this.machines.filter(m => !used.has(m.id)); },
+        addStation(p, machineId) {
+            if (!machineId) return;
+            const m = this.machines.find(x => x.id === machineId);
+            const nickname = (prompt('Station nickname (e.g. "Totem screen")', m ? m.name : '') || '').trim();
+            if (!nickname) return;
+            this.guard(async () => { const r = await api('POST', '/projects/' + p.id + '/stations', { machineId, nickname }); this.replaceProject(r.project); });
         },
-        activeSceneOf(p, pl) { return (pl.activeProjectId === p.id) ? p.sources.find(s => s.id === pl.activeSourceId) : null; },
-        playClip(p, pl, s, f) {
-            if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'media', sceneId: s.id, name: f.name });
+        removeStation(p, st) { if (!confirm('Remove station "' + st.nickname + '" from this project? (the machine stays in the pool)')) return; this.guard(async () => { const r = await api('DELETE', `/projects/${p.id}/stations/${st.id}`); this.replaceProject(r.project); }); },
+        renameStation(p, st) { const name = prompt('Station nickname', st.nickname); if (!name) return; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}`, { nickname: name.trim() }); this.replaceProject(r.project); }); },
+
+        isActiveScene(st, s) { return st.activeSceneId === s.id; },
+        activeSceneOf(p, st) { return st.activeSceneId ? (p.sources || []).find(s => s.id === st.activeSceneId) : null; },
+        playScene(p, st, s) {
+            if (this.consoleLearn) return this.learnConsole(st.id, { type: 'scene', sceneId: s.id });
+            this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: s.id }); this.replaceProject(r.project); this.ensureFiles(p, s); });
+        },
+        playClip(p, st, s, f) {
+            if (this.consoleLearn) return this.learnConsole(st.id, { type: 'media', sceneId: s.id, name: f.name });
             this.guard(async () => {
-                if (!this.isActiveScene(pl, p, s)) { await api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: s.id }); await this.loadPlayers(); }
-                await api('POST', '/players/' + pl.id + '/command', { cmd: 'select', name: f.name });
+                if (st.activeSceneId !== s.id) { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: s.id }); this.replaceProject(r.project); }
+                await api('POST', `/projects/${p.id}/stations/${st.id}/command`, { cmd: 'select', name: f.name });
                 this.notify('▸ ' + f.name);
             });
         },
-        autoplay(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'autoplay' }); api('POST', '/players/' + pl.id + '/command', { cmd: 'autoplay' }).then(() => this.loadPlayers()).catch(() => {}); },
-        transport(pl, cmd) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'transport', cmd }); api('POST', '/players/' + pl.id + '/command', { cmd }).catch(() => {}); },
-        blackout(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'blackout' }); api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {}); },
-        // Stop: clear the player's active scene (unselects it; also resets selectedName + drops any live stream)
-        stop(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'stop' }); this.guard(async () => { await api('PUT', '/players/' + pl.id + '/active', {}); await this.loadPlayers(); }); },
-        isStopped(pl) { return !pl.activeSourceId; },
-        toggleAutoplayOpts(pl) { this.autoplayOpts[pl.id] = !this.autoplayOpts[pl.id]; },
+        autoplay(p, st) { if (this.consoleLearn) return this.learnConsole(st.id, { type: 'autoplay' }); api('POST', `/projects/${p.id}/stations/${st.id}/command`, { cmd: 'autoplay' }).catch(() => {}); },
+        transport(p, st, cmd) { if (this.consoleLearn) return this.learnConsole(st.id, { type: 'transport', cmd }); api('POST', `/projects/${p.id}/stations/${st.id}/command`, { cmd }).catch(() => {}); },
+        blackout(p, st) { if (this.consoleLearn) return this.learnConsole(st.id, { type: 'blackout' }); api('POST', `/projects/${p.id}/stations/${st.id}/command`, { cmd: 'blackout' }).catch(() => {}); },
+        stop(p, st) { if (this.consoleLearn) return this.learnConsole(st.id, { type: 'stop' }); this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: '' }); this.replaceProject(r.project); }); },
+        isStopped(st) { return !st.activeSceneId; },
+        toggleAutoplayOpts(st) { this.autoplayOpts[st.id] = !this.autoplayOpts[st.id]; },
 
-        // ---- live status (from players) ----
-        statusOf(pl) { return this.status[pl.id] || null; },
-        statusLabel(pl) {
-            const s = this.status[pl.id];
+        // ---- live status (keyed by machine) ----
+        statusLabel(st) {
+            if (st.busyElsewhere) return '↗ ' + st.busyElsewhere;
+            const s = this.status[st.machineId];
             if (!s) return '— no status';
             if (s.online === false) return 'offline';
             if (s.mode === 'stream') return '● live';
@@ -299,60 +299,76 @@ function adminApp() {
             if (s.mode === 'manual') return '▸ ' + (s.name || '?') + (s.paused ? ' · paused' : '');
             return '⟳ ' + (s.name || '?') + ' · ' + (((s.index | 0) + 1)) + '/' + (s.count || 0) + (s.paused ? ' · paused' : '');
         },
-        statusClass(pl) { const s = this.status[pl.id]; if (!s || s.online === false) return 'off'; if (s.mode === 'stream') return 'live'; if (s.mode === 'diaporama' && !s.paused) return 'playing'; if (s.mode === 'stopped' || s.mode === 'black') return 'off'; return 'on'; },
-        isCurrentClip(pl, f) { const s = this.status[pl.id]; return !!(s && (s.mode === 'manual' || s.mode === 'diaporama') && s.name === f.name); },
-        isAutoplaying(pl) { const s = this.status[pl.id]; return !!(s && s.mode === 'diaporama'); },
-        maybeScroll(playerId) {
+        statusClass(st) {
+            if (st.busyElsewhere) return 'off';
+            const s = this.status[st.machineId];
+            if (!s || s.online === false) return 'off';
+            if (s.mode === 'stream') return 'live';
+            if (s.mode === 'diaporama' && !s.paused) return 'playing';
+            if (s.mode === 'stopped' || s.mode === 'black') return 'off';
+            return 'on';
+        },
+        isCurrentClip(st, f) { if (!st.driving) return false; const s = this.status[st.machineId]; return !!(s && (s.mode === 'manual' || s.mode === 'diaporama') && s.name === f.name); },
+        isAutoplaying(st) { if (!st.driving) return false; const s = this.status[st.machineId]; return !!(s && s.mode === 'diaporama'); },
+        maybeScroll(machineId) {
             if (!this.autoScroll) return;
-            const s = this.status[playerId]; if (!s || !s.name) return;
+            const s = this.status[machineId]; if (!s || !s.name) return;
             this.$nextTick(() => {
-                const cont = document.querySelector(`[data-cr-clips="${playerId}"]`); if (!cont) return;
+                const cont = document.querySelector(`[data-cr-clips="${machineId}"]`); if (!cont) return;
                 const el = cont.querySelector(`[data-name="${(window.CSS && CSS.escape) ? CSS.escape(s.name) : s.name}"]`);
                 if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
             });
         },
 
-        // ---- console MIDI (operator desk, per workspace) ----
+        // ---- station settings modal (surface / playback / local MIDI) ----
+        openStationModal(p, st) { this.stationModal = { open: true, pid: p.id, sid: st.id }; this.loadStationMidiMedia(st); },
+        closeStationModal() { this.stationModal.open = false; },
+        stationModalStation() { const p = this.project(); if (!p || !this.stationModal.open) return null; return (p.stations || []).find(st => st.id === this.stationModal.sid) || null; },
+        saveStation(st) { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', `/projects/${p.id}/stations/${st.id}`, { surface: st.surface, playback: st.playback }); this.notify('Applied live'); }); },
+        loadStationMidiMedia(st) {
+            const p = this.project();
+            if (!p || !st.driving || !st.activeSceneId) { this.stationMidiMedia[st.id] = []; return; }
+            api('GET', `/projects/${p.id}/sources/${st.activeSceneId}/files`).then(r => { this.stationMidiMedia[st.id] = r.files; }).catch(() => { this.stationMidiMedia[st.id] = []; });
+        },
+        stationMidiEnsureMap(st) { st.midi = st.midi || { map: {} }; st.midi.map = st.midi.map || {}; return st.midi.map; },
+        smSame(a, b) { return a && b && a.type === b.type && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); },
+        stationMidiKey(st, action) { const map = (st.midi && st.midi.map) || {}; for (const [k, a] of Object.entries(map)) if (this.smSame(a, action)) return window.midiKeyLabel(k); return 'unmapped'; },
+        async stationMidiLearn(st, action) { await this.ensureMidi(); if (!this.midiBus) return; this.notify('Press a pad…'); this.midiBus.learnNext((key) => { const map = this.stationMidiEnsureMap(st); for (const k of Object.keys(map)) if (this.smSame(map[k], action)) delete map[k]; map[key] = action; this.stationMidiSave(st); }); },
+        stationMidiSave(st) { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', `/projects/${p.id}/stations/${st.id}`, { midi: { map: this.stationMidiEnsureMap(st) } }); this.notify('MIDI saved'); }); },
+
+        // ---- console MIDI (operator desk, per workspace; targets stations) ----
         async ensureMidi() { if (this.midiBus || !window.MidiBus) return; const bus = new MidiBus(); bus.onpress = (k) => this.onMidiPress(k); bus.onports = (n) => { this.midiPorts = n; }; try { await bus.init(); this.midiBus = bus; } catch (e) { this.midiBus = null; this.notify('Web MIDI unavailable'); } },
         async toggleConsoleLearn() { await this.ensureMidi(); this.consoleLearn = !this.consoleLearn; this.notify(this.consoleLearn ? 'MIDI learn: click a trigger, then press a pad' : 'MIDI learn off'); },
         consoleMap() { const p = this.project(); if (!p) return {}; p.console = p.console || { map: {} }; return p.console.map; },
         sameAction(a, b) { return a && b && a.type === b.type && (a.sceneId || '') === (b.sceneId || '') && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); },
-        consoleKey(plId, action) { const map = this.consoleMap(); for (const [k, v] of Object.entries(map)) if (v.playerId === plId && this.sameAction(v.action, action)) return window.midiKeyLabel(k); return ''; },
-        async learnConsole(plId, action) {
+        consoleKey(stId, action) { const map = this.consoleMap(); for (const [k, v] of Object.entries(map)) if (v.stationId === stId && this.sameAction(v.action, action)) return window.midiKeyLabel(k); return ''; },
+        async learnConsole(stId, action) {
             await this.ensureMidi(); if (!this.midiBus) return;
             this.notify('Press a pad…');
             this.midiBus.learnNext((key) => {
                 const map = this.consoleMap();
-                for (const k of Object.keys(map)) if (map[k].playerId === plId && this.sameAction(map[k].action, action)) delete map[k];
-                map[key] = { playerId: plId, action };
+                for (const k of Object.keys(map)) if (map[k].stationId === stId && this.sameAction(map[k].action, action)) delete map[k];
+                map[key] = { stationId: stId, action };
                 this.saveConsole();
             });
         },
         saveConsole() { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', '/projects/' + p.id + '/console', { map: this.consoleMap() }); this.notify('MIDI saved'); }); },
         onMidiPress(key) {
-            // console live-drive (only in a workspace, not while learning)
             if (this.view !== 'workspace' || this.consoleLearn) return;
             const p = this.project(); if (!p) return;
             const bind = (p.console && p.console.map || {})[key]; if (!bind) return;
-            const pl = this.players.find(x => x.id === bind.playerId); if (!pl) return;
-            this.dispatchConsole(p, pl, bind.action);
+            const st = (p.stations || []).find(x => x.id === bind.stationId); if (!st) return;
+            this.dispatchConsole(p, st, bind.action);
         },
-        dispatchConsole(p, pl, a) {
-            if (a.type === 'scene') api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: a.sceneId }).then(() => this.loadPlayers()).catch(() => {});
-            else if (a.type === 'media') api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: a.sceneId }).then(() => api('POST', '/players/' + pl.id + '/command', { cmd: 'select', name: a.name })).catch(() => {});
-            else if (a.type === 'autoplay') api('POST', '/players/' + pl.id + '/command', { cmd: 'autoplay' }).catch(() => {});
-            else if (a.type === 'transport') api('POST', '/players/' + pl.id + '/command', { cmd: a.cmd }).catch(() => {});
-            else if (a.type === 'blackout') api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {});
-            else if (a.type === 'stop') api('PUT', '/players/' + pl.id + '/active', {}).then(() => this.loadPlayers()).catch(() => {});
+        dispatchConsole(p, st, a) {
+            const base = `/projects/${p.id}/stations/${st.id}`;
+            if (a.type === 'scene') api('PUT', base + '/active', { sceneId: a.sceneId }).then(r => this.replaceProject(r.project)).catch(() => {});
+            else if (a.type === 'media') api('PUT', base + '/active', { sceneId: a.sceneId }).then(() => api('POST', base + '/command', { cmd: 'select', name: a.name })).catch(() => {});
+            else if (a.type === 'autoplay') api('POST', base + '/command', { cmd: 'autoplay' }).catch(() => {});
+            else if (a.type === 'transport') api('POST', base + '/command', { cmd: a.cmd }).catch(() => {});
+            else if (a.type === 'blackout') api('POST', base + '/command', { cmd: 'blackout' }).catch(() => {});
+            else if (a.type === 'stop') api('PUT', base + '/active', { sceneId: '' }).then(r => this.replaceProject(r.project)).catch(() => {});
         },
-
-        // ---- player-local MIDI (Players page) ----
-        playerMidiEnsureMap(pl) { pl.settings = pl.settings || {}; pl.settings.midi = pl.settings.midi || { map: {} }; pl.settings.midi.map = pl.settings.midi.map || {}; return pl.settings.midi.map; },
-        pmSame(a, b) { return a && b && a.type === b.type && (a.name || '') === (b.name || '') && (a.cmd || '') === (b.cmd || ''); },
-        playerMidiKey(pl, action) { const map = (pl.settings && pl.settings.midi && pl.settings.midi.map) || {}; for (const [k, a] of Object.entries(map)) if (this.pmSame(a, action)) return window.midiKeyLabel(k); return 'unmapped'; },
-        async playerMidiLearn(pl, action) { await this.ensureMidi(); if (!this.midiBus) return; this.notify('Press a pad…'); this.midiBus.learnNext((key) => { const map = this.playerMidiEnsureMap(pl); for (const k of Object.keys(map)) if (this.pmSame(map[k], action)) delete map[k]; map[key] = action; this.playerMidiSave(pl); }); },
-        playerMidiSave(pl) { this.guard(async () => { await api('PUT', '/players/' + pl.id + '/midi', { map: this.playerMidiEnsureMap(pl) }); this.notify('MIDI saved'); }); },
-        loadPlayerMidiMedia(pl) { if (!pl.activeProjectId || !pl.activeSourceId) { this.playerMidiMedia[pl.id] = []; return; } api('GET', `/projects/${pl.activeProjectId}/sources/${pl.activeSourceId}/files`).then(r => { this.playerMidiMedia[pl.id] = r.files; }).catch(() => { this.playerMidiMedia[pl.id] = []; }); },
 
         fmtSize(n) { if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(0) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
     };

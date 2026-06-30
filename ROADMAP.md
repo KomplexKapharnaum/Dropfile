@@ -8,7 +8,8 @@ Turns Dropfile from a file-drop tool into a media controller: a **pool of Player
 - **Phase 2 — camera takeover** ✅ *code* — `stream` is a scene accept-type; *Go live* on the drop page; mesh WebRTC (streamers offer, players answer); player renders single/grid; live takes over & reverts; active-stream audio. **Needs coturn reachable** — verify at `/diag` (as of last test `turn.kxkm.net` was unreachable on 3478/5349 from outside the LAN). *This is the one feature that is code-complete but not yet verified live.*
 - **Phase 3 — MIDI** ✅ learn on the player (`m`) and in the admin; map note/CC → select a clip / transport / blackout; a workspace "console" drives any player from one controller. (The original `playMode: midi` trigger-surface was folded into the live **diaporama / manual-select** model — MIDI is now a binding layer over either; see Phase 4.)
 - **Phase 4 — workspaces & control room** ✅ admin reorganised into a **Projects** grid → a per-project **workspace**: a live **control room** (one column per attached player — pick a scene, click a clip, transport + blackout, live player-status feedback, per-workspace console MIDI learn) above a scenes & media manager. The drop page became a **KXKM chat** composer (message / attach / *Go live*) that adapts to each scene's accept-types.
-- **Extras** ✅ text drop (`.txt`), admin playback remote, `/diag` WebRTC tester.
+- **Phase 5 — machines & stations** ✅ the "player" split into a **Machine** (physical box: static name, device type, description, fixed kiosk URL) and a per-project **Station** (a machine bound into a project with its own surface/playback/MIDI + rig nickname). Control-room columns are stations; a gear opens the station settings modal; activating a scene drives the station's machine (taking it over from other projects). Migration preserves kiosk tokens.
+- **Extras** ✅ text drop (`.txt`) shown on players, admin playback remote, `/diag` WebRTC tester.
 
 A few names shifted from the original plan below: *sources* are called **scenes**
 (each reachable by its own shareable URL — no public/private flag); camera takeover
@@ -259,3 +260,48 @@ The admin collapsed from per-entity pages into a **task-oriented** shape.
   to the scene's accept-types: a message box (text → `.txt`), a media attach button,
   and/or **Go live** (camera). The timeline shows only the visitor's own contributions;
   a hook is left in `drop.js` for future operator → audience broadcast messages.
+
+## Phase 5 — Machines & Stations
+
+The original **Player** conflated the physical box (its kiosk URL + identity) with
+per-show display config (surface, attachments, active scene). Split into two:
+
+- **Machine** — a physical box (pool, `store.data.machines`). Identity (`name`,
+  `type` from the editable `store.data.deviceTypes`, `description`) + a **stable
+  kiosk `token`** (`/p/:token`, set once on the box, never changes) + runtime
+  *active* (`activeProjectId`, `activeStationId`, `activeSceneId`, `selectedName`,
+  `playMode`). The machine is the runtime display target — it shows one thing.
+- **Station** — a machine bound into one project (`project.stations[id]`):
+  `machineId`, `nickname` ("Totem screen", "Cart 1"), `surface` (the scaler block),
+  `playback` (imageDuration/loop/lastX/prioritizeFresh) and a `midi` map. The same
+  box is a different station per project — at most one station per machine per
+  project; `machine ↔ stations` is derived by scanning projects.
+
+```jsonc
+"machines": { "<id>": { "id","name","token","type","description","createdAt",
+                        "activeProjectId","activeStationId","activeSceneId",
+                        "selectedName","playMode" } },
+"deviceTypes": [ "Raspberry Pi 4", "N150 miniPC", … ],
+"projects": { "<id>": { …, "stations": { "<sid>": {
+   "id","machineId","nickname",
+   "surface": { container,width,height,posX,offsetX,posY,offsetY,fit,rotation,evenLineSuppression },
+   "playback": { imageDuration,loop,lastX,prioritizeFresh },
+   "midi": { map } } }, "stationOrder": [ … ] } }
+```
+
+**Runtime / takeover.** The kiosk (`/api/player/:machineToken`) resolves the machine
+→ its active station → **composes** the same `settings` object the kiosk already
+consumed (surface as `scaler`, playback flags, `midi`, `playMode`) — so `player.js`
+is unchanged. Activating a scene on a station (control room or console MIDI) sets the
+machine's active to *(project, station, scene)* and **takes the box over** from any
+other project; that project's column then shows the station as *in use elsewhere*.
+
+**UI.** The Players page became a **Machines** pool (name, device type, description,
+kiosk URL/QR, "manage device types"). Control-room columns are **stations**; a gear
+opens a **station settings modal** (surface + playback + local MIDI), since these are
+set once at project start. `lib/defaults.js` holds the default/clean shapes and
+`composeSettings`; `lib/model.js` and `lib/playlist.js` resolve machines/stations.
+
+**Migration** (`lib/migrate.js`, idempotent): each legacy player → one Machine
+(**same token/URL**) + one Station per attached project (surface/playback/MIDI copied
+from the player's settings), carrying the runtime active state. No kiosk re-provisioning.

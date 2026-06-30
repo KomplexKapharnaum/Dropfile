@@ -1,27 +1,29 @@
 // Socket.IO wiring:
-//  - player display rooms (live settings / active / new-media / command)
-//  - player -> admin live status feedback ('admins' room)
+//  - kiosk (machine) display rooms (live settings / active / new-media / command)
+//  - machine -> admin live status feedback ('admins' room)
 //  - WebRTC stream signaling for camera takeover (mesh)
+// Event names keep the legacy `player-*` spelling so the kiosk front-end
+// (player.js) is unchanged; a "player" on the wire is a Machine here.
 const model = require('../lib/model');
 
 module.exports = function (io, ctx) {
-    const liveStatus = {}; // playerId -> last reported status (in-memory)
+    const liveStatus = {}; // machineId -> last reported status (in-memory)
 
     io.on('connection', (socket) => {
         socket.on('player-join', (token) => {
-            const player = model.findPlayerByToken(String(token || ''));
-            if (player) { socket.join('player:' + player.token); socket.data.playerId = player.id; }
+            const machine = model.findMachineByToken(String(token || ''));
+            if (machine) { socket.join('player:' + machine.token); socket.data.machineId = machine.id; }
         });
 
-        // admin console listens for live player status
+        // admin console listens for live machine status
         socket.on('admin-join', () => { socket.join('admins'); socket.emit('status-snapshot', liveStatus); });
 
-        // a player reports what it is currently showing
+        // a machine reports what it is currently showing
         socket.on('player-status', (msg) => {
-            const player = model.findPlayerByToken(String((msg && msg.token) || ''));
-            if (!player) return;
-            liveStatus[player.id] = (msg && msg.status) || null;
-            io.to('admins').emit('player-status', { playerId: player.id, status: liveStatus[player.id] });
+            const machine = model.findMachineByToken(String((msg && msg.token) || ''));
+            if (!machine) return;
+            liveStatus[machine.id] = (msg && msg.status) || null;
+            io.to('admins').emit('player-status', { machineId: machine.id, status: liveStatus[machine.id] });
         });
 
         // ---- WebRTC stream signaling ----
@@ -34,9 +36,9 @@ module.exports = function (io, ctx) {
                 sceneId = found.source.id;
                 name = String((msg && msg.name) || 'guest').slice(0, 24);
             } else {
-                const player = model.findPlayerByToken(String((msg && msg.token) || ''));
-                if (!player || !player.activeSourceId) return ack && ack({ error: 'no active scene' });
-                sceneId = player.activeSourceId;
+                const machine = model.findMachineByToken(String((msg && msg.token) || ''));
+                if (!machine || !machine.activeSceneId) return ack && ack({ error: 'no active scene' });
+                sceneId = machine.activeSceneId;
             }
             const room = 'stream:' + sceneId;
             socket.data.stream = { role, sceneId, name };
@@ -65,9 +67,9 @@ module.exports = function (io, ctx) {
 
         socket.on('disconnect', () => {
             leaveStream();
-            if (socket.data.playerId) {
-                liveStatus[socket.data.playerId] = { online: false };
-                io.to('admins').emit('player-status', { playerId: socket.data.playerId, status: liveStatus[socket.data.playerId] });
+            if (socket.data.machineId) {
+                liveStatus[socket.data.machineId] = { online: false };
+                io.to('admins').emit('player-status', { machineId: socket.data.machineId, status: liveStatus[socket.data.machineId] });
             }
         });
     });

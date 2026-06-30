@@ -1,4 +1,8 @@
 // Admin API (password-gated in app.js) + static admin SPA.
+// Model: a Machine is a physical box (pool, stable kiosk token); a Station is a
+// Machine bound into one project (project.stations) with its own surface /
+// playback / MIDI + nickname. The machine's runtime "active" (project/station/
+// scene) decides what its kiosk shows.
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -8,6 +12,7 @@ const store = require('../lib/store');
 const ids = require('../lib/ids');
 const model = require('../lib/model');
 const thumbs = require('../lib/thumbs');
+const defaults = require('../lib/defaults');
 const playlistLib = require('../lib/playlist');
 const { listMedia, orderMedia, safeSegment } = require('../lib/media');
 
@@ -15,58 +20,47 @@ module.exports = function (ctx) {
     const { UPLOAD_PATH, UPLOAD_SIZE, io } = ctx;
     const api = express.Router();
 
-    // ---- helpers (closure over ctx) ----------------------------------------
-    function defaultSettings() {
+    // ---- machine / station factories --------------------------------------
+    function newMachine(id, name) {
         return {
-            playMode: 'diaporama',
-            imageDuration: 5,
-            loop: 'all',
-            lastX: 20,
-            prioritizeFresh: true,
-            scaler: {
-                container: 'full', width: 0, height: 0,
-                posX: 'center', offsetX: 0,     // container placement on screen (custom res)
-                posY: 'center', offsetY: 0,
-                fit: 'contain',                 // common filling options:
-                rotation: 0,
-                evenLineSuppression: false      // vertical 50% squash for semi-transparent LED
-            },
-            midi: { map: {} }                   // MIDI key -> action (media/transport/blackout)
+            id, name, token: ids.token(), type: '', description: '', createdAt: Date.now(),
+            activeProjectId: null, activeStationId: null, activeSceneId: null,
+            selectedName: null, playMode: 'diaporama'
+        };
+    }
+    function newStation(machineId, nickname) {
+        return {
+            id: ids.id(), machineId, nickname,
+            surface: defaults.defaultSurface(), playback: defaults.defaultPlayback(),
+            midi: { map: {} }, createdAt: Date.now()
         };
     }
 
-    function newPlayer(id, name) {
-        return {
-            id, name, token: ids.token(), createdAt: Date.now(),
-            projectIds: [], activeProjectId: null, activeSourceId: null,
-            settings: defaultSettings()
-        };
+    function clearMachine(m) { m.activeProjectId = null; m.activeStationId = null; m.activeSceneId = null; m.selectedName = null; }
+    function broadcastSettings(m) { io.to('player:' + m.token).emit('settings', playlistLib.settingsFor(m)); }
+    function broadcastActive(m) {
+        io.to('player:' + m.token).emit('active-change', {
+            active: playlistLib.activeInfo(m),
+            media: playlistLib.playlist(UPLOAD_PATH, m)
+        });
     }
+    function refreshSceneMachines(sceneId) { for (const m of model.machinesForScene(sceneId)) broadcastActive(m); }
 
-    function mergeSettings(base, inc) {
-        const out = Object.assign({}, base, inc);
-        out.scaler = Object.assign({}, (base && base.scaler) || {}, inc.scaler || {});
-        return out;
-    }
-
+    // ---- scene helpers (unchanged model) -----------------------------------
     function sceneCount(p, s) {
         try { return listMedia(model.sourceDir(UPLOAD_PATH, p, s)).length; } catch (e) { return 0; }
     }
-
     function defaultAccept() { return { image: true, video: true, text: false, stream: false }; }
     function cleanAccept(a) { return { image: !!a.image, video: !!a.video, text: !!a.text, stream: !!a.stream }; }
 
-    // create a scene under project p (shared by project-create and scene-create)
     function makeScene(p, name, accept) {
         const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));
         const sid = ids.id();
         const scene = {
             id: sid, name, folder,
-            dropToken: ids.token(),            // every scene is reachable by its URL
-            allowSelfDelete: true, order: [],
+            dropToken: ids.token(), allowSelfDelete: true, order: [],
             accept: accept ? cleanAccept(accept) : defaultAccept(),
-            streamMode: 'replace',
-            createdAt: Date.now()
+            streamMode: 'replace', createdAt: Date.now()
         };
         p.sources = p.sources || {};
         p.sources[sid] = scene;
@@ -87,7 +81,6 @@ module.exports = function (ctx) {
         };
     }
 
-    // scenes in their explicit project order (unknown ones appended)
     function orderedScenes(p) {
         const all = p.sources || {};
         const order = Array.isArray(p.sceneOrder) ? p.sceneOrder : [];
@@ -98,6 +91,43 @@ module.exports = function (ctx) {
         return out;
     }
 
+    // ---- machine / station serialisers ------------------------------------
+    function serializeMachine(m) {
+        const stations = model.machineStations(m.id);
+        return {
+            id: m.id, name: m.name, token: m.token,
+            type: m.type || '', description: m.description || '',
+            playMode: m.playMode || 'diaporama',
+            activeProjectId: m.activeProjectId || null,
+            activeStationId: m.activeStationId || null,
+            activeSceneId: m.activeSceneId || null,
+            usedIn: stations.length,
+            showing: (m.activeProjectId && store.data.projects[m.activeProjectId]) ? store.data.projects[m.activeProjectId].name : null
+        };
+    }
+
+    function serializeStation(project, st) {
+        const m = model.stationMachine(st);
+        const driving = model.stationDriving(project.id, st);
+        let busyElsewhere = null;
+        if (m && !driving && m.activeStationId && m.activeProjectId && m.activeProjectId !== project.id) {
+            const op = store.data.projects[m.activeProjectId];
+            busyElsewhere = op ? op.name : 'another project';
+        }
+        return {
+            id: st.id, machineId: st.machineId, nickname: st.nickname,
+            surface: defaults.cleanSurface(st.surface),
+            playback: defaults.cleanPlayback(st.playback),
+            midi: { map: (st.midi && st.midi.map) || {} },
+            machine: m ? { id: m.id, name: m.name, type: m.type || '', token: m.token } : null,
+            driving,
+            playMode: driving ? (m.playMode || 'diaporama') : null,
+            activeSceneId: driving ? (m.activeSceneId || null) : null,
+            selectedName: driving ? (m.selectedName || null) : null,
+            busyElsewhere
+        };
+    }
+
     function serializeProject(p) {
         const scenes = orderedScenes(p).map(s => serializeScene(p, s));
         return {
@@ -106,38 +136,15 @@ module.exports = function (ctx) {
             sceneCount: scenes.length,
             mediaCount: scenes.reduce((n, s) => n + s.count, 0),
             console: { map: (p.console && p.console.map) ? p.console.map : {} },
-            players: model.projectPlayers(p.id).map(pl => ({ id: pl.id, name: pl.name }))
+            stations: model.stationsForProject(p.id).map(st => serializeStation(p, st))
         };
     }
 
-    function serializePlayer(pl) {
-        return {
-            id: pl.id, name: pl.name, token: pl.token,
-            projectIds: pl.projectIds || [],
-            activeProjectId: pl.activeProjectId || null,
-            activeSourceId: pl.activeSourceId || null,
-            selectedName: pl.selectedName || null,
-            settings: pl.settings
-        };
-    }
-
-    function broadcastActive(pl) {
-        io.to('player:' + pl.token).emit('active-change', {
-            active: playlistLib.activeInfo(pl),
-            media: playlistLib.playlist(UPLOAD_PATH, pl)
-        });
-    }
-
-    function refreshSourcePlayers(sourceId) {
-        for (const pl of model.playersForSource(sourceId)) broadcastActive(pl);
-    }
-
+    // ---- file helpers (unchanged) -----------------------------------------
     function removeFromManifest(sourceId, filename) {
         const manifest = store.data.uploads[sourceId];
         if (!manifest) return;
-        for (const [fid, u] of Object.entries(manifest)) {
-            if (u.filename === filename) delete manifest[fid];
-        }
+        for (const [fid, u] of Object.entries(manifest)) if (u.filename === filename) delete manifest[fid];
     }
 
     function bulkFiles(req, res, op) {
@@ -163,17 +170,15 @@ module.exports = function (ctx) {
                 removeFromManifest(s.id, name);
             } catch (e) { /* skip */ }
         }
-        // drop removed files from the explicit order
         if (Array.isArray(s.order) && s.order.length) {
             const present = new Set(listMedia(dir).map(m => m.name));
             s.order = s.order.filter(n => present.has(n));
         }
         store.save();
-        refreshSourcePlayers(s.id);
+        refreshSceneMachines(s.id);
         res.json({ ok: true, count });
     }
 
-    // resolve :id/:sid -> req._project / req._source / req._dir (mkdir'd)
     function resolveSource(req, res, next) {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'project not found' });
@@ -185,7 +190,6 @@ module.exports = function (ctx) {
         next();
     }
 
-    // multer for admin-side uploads (any scene)
     const uploadStorage = multer.diskStorage({
         destination: (req, file, cb) => cb(null, req._dir),
         filename: (req, file, cb) => {
@@ -198,22 +202,28 @@ module.exports = function (ctx) {
     const upload = multer({ storage: uploadStorage, limits: { fileSize: UPLOAD_SIZE * 1024 * 1024 } });
 
     // ---- config + QR -------------------------------------------------------
-    api.get('/config', (req, res) => {
-        res.json({ publicUrl: process.env.PUBLIC_URL || '' });
-    });
+    api.get('/config', (req, res) => res.json({ publicUrl: process.env.PUBLIC_URL || '' }));
 
     api.get('/qr', async (req, res) => {
         const data = String(req.query.data || '');
         if (!data) return res.status(400).send('missing data');
         try {
-            if (String(req.query.type) === 'svg') {
-                res.type('svg').send(await QRCode.toString(data, { type: 'svg', margin: 1 }));
-            } else {
-                res.type('png').send(await QRCode.toBuffer(data, { margin: 1, width: 600 }));
-            }
-        } catch (e) {
-            res.status(500).send('qr error');
-        }
+            if (String(req.query.type) === 'svg') res.type('svg').send(await QRCode.toString(data, { type: 'svg', margin: 1 }));
+            else res.type('png').send(await QRCode.toBuffer(data, { margin: 1, width: 600 }));
+        } catch (e) { res.status(500).send('qr error'); }
+    });
+
+    // ---- device types (editable global list) ------------------------------
+    api.get('/device-types', (req, res) => res.json({ deviceTypes: store.data.deviceTypes || [] }));
+    api.put('/device-types', (req, res) => {
+        const list = Array.isArray(req.body.deviceTypes) ? req.body.deviceTypes : [];
+        const seen = new Set();
+        store.data.deviceTypes = list
+            .map(t => String(t || '').trim()).filter(Boolean)
+            .filter(t => { const k = t.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+            .slice(0, 50);
+        store.save();
+        res.json({ deviceTypes: store.data.deviceTypes });
     });
 
     // ---- projects ----------------------------------------------------------
@@ -226,10 +236,10 @@ module.exports = function (ctx) {
         if (!name) return res.status(400).json({ error: 'name required' });
         const slug = ids.uniqueSlug(ids.slugify(name), Object.values(store.data.projects).map(p => p.slug));
         const id = ids.id();
-        const project = { id, name, slug, createdAt: Date.now(), sources: {}, sceneOrder: [] };
+        const project = { id, name, slug, createdAt: Date.now(), sources: {}, sceneOrder: [], console: { map: {} }, stations: {}, stationOrder: [] };
         store.data.projects[id] = project;
         try { fs.mkdirSync(path.join(UPLOAD_PATH, slug), { recursive: true }); } catch (e) {}
-        makeScene(project, 'Drop');  // every new project starts with a Drop scene
+        makeScene(project, 'Drop');
         store.save();
         res.json({ project: serializeProject(project) });
     });
@@ -245,20 +255,15 @@ module.exports = function (ctx) {
     api.delete('/projects/:id', (req, res) => {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
-        for (const pl of Object.values(store.data.players)) {
-            pl.projectIds = (pl.projectIds || []).filter(x => x !== p.id);
-            if (pl.activeProjectId === p.id) {
-                pl.activeProjectId = null; pl.activeSourceId = null; broadcastActive(pl);
-            }
+        for (const m of Object.values(store.data.machines)) {
+            if (m.activeProjectId === p.id) { clearMachine(m); broadcastSettings(m); broadcastActive(m); }
         }
-        delete store.data.projects[req.params.id];
+        delete store.data.projects[req.params.id]; // its stations go with it
         store.save();
         res.json({ ok: true }); // media left on disk on purpose
     });
 
     // ---- scenes (sources) --------------------------------------------------
-    // One unified create; a scene is public or private. dropToken is always
-    // minted so toggling public is instant. New scenes default to private.
     api.post('/projects/:id/sources', (req, res) => {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
@@ -268,7 +273,6 @@ module.exports = function (ctx) {
         res.json({ project: serializeProject(p) });
     });
 
-    // reorder scenes within a project (drives the 01- index prefix)
     api.put('/projects/:id/scene-order', (req, res) => {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
@@ -287,6 +291,7 @@ module.exports = function (ctx) {
         if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
         if (req.body.streamMode === 'replace' || req.body.streamMode === 'grid') s.streamMode = req.body.streamMode;
         store.save();
+        refreshSceneMachines(s.id); // push new accept/streamMode to players already showing this scene
         res.json({ project: serializeProject(req._project) });
     });
 
@@ -294,9 +299,7 @@ module.exports = function (ctx) {
         const p = store.data.projects[req.params.id];
         if (!p || !(p.sources || {})[req.params.sid]) return res.status(404).json({ error: 'not found' });
         const sid = req.params.sid;
-        for (const pl of Object.values(store.data.players)) {
-            if (pl.activeSourceId === sid) { pl.activeSourceId = null; broadcastActive(pl); }
-        }
+        for (const m of model.machinesForScene(sid)) { clearMachine(m); broadcastSettings(m); broadcastActive(m); }
         delete p.sources[sid];
         delete store.data.uploads[sid];
         p.sceneOrder = (p.sceneOrder || []).filter(x => x !== sid);
@@ -316,8 +319,7 @@ module.exports = function (ctx) {
 
     api.post('/projects/:id/sources/:sid/upload', resolveSource, upload.array('files', 50), (req, res) => {
         const added = (req.files || []).map(f => f.filename);
-        // new uploads stay out of the explicit order -> appended by upload time
-        refreshSourcePlayers(req._source.id);
+        refreshSceneMachines(req._source.id);
         res.json({ ok: true, added, count: added.length });
     });
 
@@ -327,7 +329,7 @@ module.exports = function (ctx) {
             .map(n => safeSegment(n)).filter(n => present.has(n));
         req._source.order = order;
         store.save();
-        refreshSourcePlayers(req._source.id);
+        refreshSceneMachines(req._source.id);
         res.json({ ok: true });
     });
 
@@ -342,109 +344,128 @@ module.exports = function (ctx) {
         const name = safeSegment(req.query.name);
         const file = path.join(model.sourceDir(UPLOAD_PATH, p, s), name);
         if (!name || !fs.existsSync(file)) return res.status(404).end();
-        try {
-            res.sendFile(await thumbs.getThumb(file));
-        } catch (e) {
-            res.status(500).end();
-        }
+        try { res.sendFile(await thumbs.getThumb(file)); }
+        catch (e) { res.status(500).end(); }
     });
 
-    // ---- players (pool) ----------------------------------------------------
-    api.get('/players', (req, res) => {
-        res.json({ players: Object.values(store.data.players).map(serializePlayer) });
+    // ---- machines (pool of physical boxes) ---------------------------------
+    api.get('/machines', (req, res) => {
+        res.json({ machines: Object.values(store.data.machines).map(serializeMachine) });
     });
 
-    api.post('/players', (req, res) => {
+    api.post('/machines', (req, res) => {
         const id = ids.id();
-        store.data.players[id] = newPlayer(id, String(req.body.name || 'Player').trim());
+        store.data.machines[id] = newMachine(id, String(req.body.name || 'Machine').trim() || 'Machine');
         store.save();
-        res.json({ player: serializePlayer(store.data.players[id]) });
+        res.json({ machine: serializeMachine(store.data.machines[id]) });
     });
 
-    api.put('/players/:id', (req, res) => {
-        const pl = store.data.players[req.params.id];
-        if (!pl) return res.status(404).json({ error: 'not found' });
-        if (req.body.name) pl.name = String(req.body.name).trim();
+    api.put('/machines/:id', (req, res) => {
+        const m = store.data.machines[req.params.id];
+        if (!m) return res.status(404).json({ error: 'not found' });
+        if (req.body.name) m.name = String(req.body.name).trim();
+        if (typeof req.body.type === 'string') m.type = req.body.type.trim();
+        if (typeof req.body.description === 'string') m.description = req.body.description.slice(0, 500);
         store.save();
-        res.json({ player: serializePlayer(pl) });
+        res.json({ machine: serializeMachine(m) });
     });
 
-    api.delete('/players/:id', (req, res) => {
-        if (!store.data.players[req.params.id]) return res.status(404).json({ error: 'not found' });
-        delete store.data.players[req.params.id];
+    api.delete('/machines/:id', (req, res) => {
+        const m = store.data.machines[req.params.id];
+        if (!m) return res.status(404).json({ error: 'not found' });
+        for (const { project, station } of model.machineStations(m.id)) {
+            delete project.stations[station.id];
+            project.stationOrder = (project.stationOrder || []).filter(x => x !== station.id);
+        }
+        delete store.data.machines[req.params.id];
         store.save();
         res.json({ ok: true });
     });
 
-    api.post('/players/:id/attach', (req, res) => {
-        const pl = store.data.players[req.params.id];
-        const projectId = String(req.body.projectId || '');
-        if (!pl || !store.data.projects[projectId]) return res.status(404).json({ error: 'not found' });
-        pl.projectIds = pl.projectIds || [];
-        if (!pl.projectIds.includes(projectId)) pl.projectIds.push(projectId);
-        store.save();
-        res.json({ player: serializePlayer(pl) });
-    });
-
-    api.post('/players/:id/detach', (req, res) => {
-        const pl = store.data.players[req.params.id];
-        const projectId = String(req.body.projectId || '');
-        if (!pl) return res.status(404).json({ error: 'not found' });
-        pl.projectIds = (pl.projectIds || []).filter(x => x !== projectId);
-        if (pl.activeProjectId === projectId) {
-            pl.activeProjectId = null; pl.activeSourceId = null; broadcastActive(pl);
+    // ---- stations (a machine bound into a project) -------------------------
+    api.post('/projects/:pid/stations', (req, res) => {
+        const p = store.data.projects[req.params.pid];
+        if (!p) return res.status(404).json({ error: 'project not found' });
+        const machineId = String(req.body.machineId || '');
+        const machine = store.data.machines[machineId];
+        if (!machine) return res.status(400).json({ error: 'unknown machine' });
+        if (Object.values(p.stations || {}).some(s => s.machineId === machineId)) {
+            return res.status(400).json({ error: 'machine already in this project' });
         }
+        const nickname = String(req.body.nickname || machine.name || 'Station').trim() || 'Station';
+        const st = newStation(machineId, nickname);
+        p.stations = p.stations || {}; p.stations[st.id] = st;
+        p.stationOrder = p.stationOrder || []; p.stationOrder.push(st.id);
         store.save();
-        res.json({ player: serializePlayer(pl) });
+        res.json({ project: serializeProject(p) });
     });
 
-    api.put('/players/:id/active', (req, res) => {
-        const pl = store.data.players[req.params.id];
-        if (!pl) return res.status(404).json({ error: 'not found' });
-        const projectId = String(req.body.projectId || '');
-        const sourceId = String(req.body.sourceId || '');
-        pl.selectedName = null; // switching scene resets the manual selection
-        if (!projectId && !sourceId) { // clear
-            pl.activeProjectId = null; pl.activeSourceId = null;
-            store.save(); broadcastActive(pl);
-            return res.json({ player: serializePlayer(pl) });
+    api.put('/projects/:pid/stations/:sid', (req, res) => {
+        const found = model.findStation(req.params.pid, req.params.sid);
+        if (!found) return res.status(404).json({ error: 'not found' });
+        const st = found.station;
+        if (req.body.nickname) st.nickname = String(req.body.nickname).trim();
+        if (req.body.surface && typeof req.body.surface === 'object') st.surface = defaults.cleanSurface(Object.assign({}, st.surface, req.body.surface));
+        if (req.body.playback && typeof req.body.playback === 'object') st.playback = defaults.cleanPlayback(Object.assign({}, st.playback, req.body.playback));
+        if (req.body.midi && req.body.midi.map && typeof req.body.midi.map === 'object') { st.midi = st.midi || { map: {} }; st.midi.map = req.body.midi.map; }
+        store.save();
+        const m = model.stationMachine(st);
+        if (m && model.stationDriving(found.project.id, st)) broadcastSettings(m);
+        res.json({ project: serializeProject(found.project) });
+    });
+
+    api.delete('/projects/:pid/stations/:sid', (req, res) => {
+        const found = model.findStation(req.params.pid, req.params.sid);
+        if (!found) return res.status(404).json({ error: 'not found' });
+        const m = model.stationMachine(found.station);
+        const wasDriving = m && model.stationDriving(found.project.id, found.station);
+        delete found.project.stations[found.station.id];
+        found.project.stationOrder = (found.project.stationOrder || []).filter(x => x !== found.station.id);
+        if (wasDriving) { clearMachine(m); broadcastSettings(m); broadcastActive(m); }
+        store.save();
+        res.json({ project: serializeProject(found.project) });
+    });
+
+    // set/clear the station's machine active scene (activate = take over the box)
+    api.put('/projects/:pid/stations/:sid/active', (req, res) => {
+        const found = model.findStation(req.params.pid, req.params.sid);
+        if (!found) return res.status(404).json({ error: 'not found' });
+        const m = model.stationMachine(found.station);
+        if (!m) return res.status(400).json({ error: 'station has no machine' });
+        const sceneId = String(req.body.sceneId || '');
+        if (!sceneId) { // stop: only clears if this station currently drives the box
+            if (m.activeStationId === found.station.id) { clearMachine(m); store.save(); broadcastSettings(m); broadcastActive(m); }
+            return res.json({ project: serializeProject(found.project) });
         }
-        if (!model.findSource(projectId, sourceId)) return res.status(400).json({ error: 'invalid source' });
-        if (!(pl.projectIds || []).includes(projectId)) return res.status(400).json({ error: 'project not attached' });
-        pl.activeProjectId = projectId;
-        pl.activeSourceId = sourceId;
+        if (!(found.project.sources || {})[sceneId]) return res.status(400).json({ error: 'invalid scene' });
+        m.activeProjectId = found.project.id;
+        m.activeStationId = found.station.id;
+        m.activeSceneId = sceneId;
+        m.selectedName = null;
         store.save();
-        broadcastActive(pl);
-        res.json({ player: serializePlayer(pl) });
+        broadcastSettings(m);    // surface may differ between stations
+        broadcastActive(m);
+        res.json({ project: serializeProject(found.project) });
     });
 
-    api.put('/players/:id/settings', (req, res) => {
-        const pl = store.data.players[req.params.id];
-        if (!pl) return res.status(404).json({ error: 'not found' });
-        pl.settings = mergeSettings(pl.settings || defaultSettings(), req.body.settings || {});
-        store.save();
-        io.to('player:' + pl.token).emit('settings', pl.settings);
-        res.json({ player: serializePlayer(pl) });
-    });
-
-    // playback remote + MIDI: push a command to the live player(s)
+    // playback remote + MIDI: push a command to the station's machine
     const SIMPLE = ['next', 'prev', 'reload', 'pause', 'play', 'restart'];
-    api.post('/players/:id/command', (req, res) => {
-        const pl = store.data.players[req.params.id];
-        if (!pl) return res.status(404).json({ error: 'not found' });
-        pl.settings = pl.settings || defaultSettings();
-        const room = 'player:' + pl.token;
+    api.post('/projects/:pid/stations/:sid/command', (req, res) => {
+        const found = model.findStation(req.params.pid, req.params.sid);
+        if (!found) return res.status(404).json({ error: 'not found' });
+        const m = model.stationMachine(found.station);
+        if (!m) return res.status(400).json({ error: 'station has no machine' });
+        const room = 'player:' + m.token;
         const cmd = String(req.body.cmd || '');
         if (SIMPLE.includes(cmd)) io.to(room).emit('command', cmd);
-        // autoplay => diaporama, select => manual hold; both persist so a player resumes after reload
-        else if (cmd === 'autoplay') { pl.settings.playMode = 'diaporama'; pl.selectedName = null; store.save(); io.to(room).emit('command', 'autoplay'); }
-        else if (cmd === 'select') { pl.settings.playMode = 'manual'; pl.selectedName = String(req.body.name || ''); store.save(); io.to(room).emit('command', { cmd: 'select', name: pl.selectedName }); }
+        else if (cmd === 'autoplay') { m.playMode = 'diaporama'; m.selectedName = null; store.save(); io.to(room).emit('command', 'autoplay'); }
+        else if (cmd === 'select') { m.playMode = 'manual'; m.selectedName = String(req.body.name || ''); store.save(); io.to(room).emit('command', { cmd: 'select', name: m.selectedName }); }
         else if (cmd === 'blackout') io.to(room).emit('command', { cmd: 'blackout', on: req.body.on });
         else return res.status(400).json({ error: 'unknown command' });
         res.json({ ok: true });
     });
 
-    // persist a workspace's operator-console MIDI map (admin device -> player actions)
+    // persist a workspace's operator-console MIDI map (admin device -> station actions)
     api.put('/projects/:id/console', (req, res) => {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
@@ -452,18 +473,6 @@ module.exports = function (ctx) {
         if (req.body.map && typeof req.body.map === 'object') p.console.map = req.body.map;
         store.save();
         res.json({ project: serializeProject(p) });
-    });
-
-    // persist a player's MIDI map (admin side)
-    api.put('/players/:id/midi', (req, res) => {
-        const pl = store.data.players[req.params.id];
-        if (!pl) return res.status(404).json({ error: 'not found' });
-        pl.settings = pl.settings || defaultSettings();
-        pl.settings.midi = pl.settings.midi || { map: {} };
-        if (req.body.map && typeof req.body.map === 'object') pl.settings.midi.map = req.body.map;
-        store.save();
-        io.to('player:' + pl.token).emit('settings', pl.settings);
-        res.json({ player: serializePlayer(pl) });
     });
 
     return { api, page: express.static(path.join(__dirname, '..', 'www', 'admin')) };
