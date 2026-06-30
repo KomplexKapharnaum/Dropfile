@@ -107,6 +107,7 @@
     let accept = { image: true, video: true, audio: false, text: false, stream: false };
     let allowSelfDelete = false;
     let welcome = '';            // operator's intro message, shown as an incoming bubble
+    let maxChars = 140;          // text-input cap from the scene; 0 = unlimited
     let ICE = [];
     let sender = null;
 
@@ -145,6 +146,7 @@
         accept = info.accept || accept;
         allowSelfDelete = info.allowSelfDelete;
         welcome = (info.welcome || '').trim();
+        maxChars = (typeof info.maxChars === 'number' && info.maxChars >= 0) ? Math.floor(info.maxChars) : 140;
         ICE = info.ice || [];
         setupComposer();
         if (!nick) showNick(true); else $('nickName').textContent = nick;
@@ -168,6 +170,8 @@
 
         // text field + send button
         if (!accept.text) { $('textInput').classList.add('hidden'); $('sendBtn').classList.add('hidden'); }
+        else if (maxChars > 0) $('textInput').setAttribute('maxlength', String(maxChars));
+        else $('textInput').removeAttribute('maxlength');
 
         // attach / media button
         const attachBtn = $('attachBtn');

@@ -14,6 +14,9 @@ module.exports = function (ctx) {
     const router = express.Router();
     const { UPLOAD_PATH, UPLOAD_SIZE, io } = ctx;
 
+    // text-input character cap for a scene: default 140, 0 = unlimited
+    function dropMaxChars(src) { const n = Math.floor(Number(src && src.maxChars)); return (Number.isFinite(n) && n >= 0) ? n : 140; }
+
     // resolve :token -> drop project / source / on-disk dir
     function resolveDrop(req, res, next) {
         const found = model.findSourceByDropToken(req.params.token);
@@ -52,6 +55,7 @@ module.exports = function (ctx) {
             allowSelfDelete: !!req.dropSource.allowSelfDelete,
             accept: req.dropSource.accept || { image: true, video: true, audio: false, text: false, stream: false },
             welcome: req.dropSource.welcome || '',   // operator's intro, shown as an incoming message
+            maxChars: dropMaxChars(req.dropSource),  // text-input cap; 0 = unlimited
             ice: turn.iceServers()
         });
     });
@@ -92,7 +96,9 @@ module.exports = function (ctx) {
     router.post('/api/drop/:token/text', resolveDrop, (req, res) => {
         const accept = req.dropSource.accept || {};
         if (!accept.text) return res.status(403).json({ error: 'text not accepted here' });
-        const text = String(req.body.text || '').slice(0, 100000);
+        const max = dropMaxChars(req.dropSource);
+        let text = String(req.body.text || '').slice(0, 100000);
+        if (max > 0) text = text.slice(0, max);   // enforce the scene's cap server-side too
         if (!text.trim()) return res.status(400).json({ error: 'empty text' });
         const nick = safeNick(req.body.nick) || 'anon';
         const visitor = String(req.body.visitor || '').slice(0, 64);
