@@ -7,18 +7,18 @@ Dropfile turns drop-folders and displays into a small **media controller**:
   suppression, position, fit, rotation). A player is attached to one or more
   projects and points at one **active source** at a time. Re-pointing it is a
   live action — the URL and scaler config belong to the *screen*, not the content.
-- **Projects** — content groupings.
-- **Scenes** — a folder of media inside a project. A scene is **public** or
-  **private** (toggle):
-  - **public** — exposes a **blind drop box** URL (+QR). Uploaders only ever see
-    and delete *their own* files, never anyone else's.
-  - **private** — no public URL; admin-managed only.
-  - Either way the admin can add media and **reorder** it (drag); the chosen
-    order drives playback. New uploads append in upload-time order.
-- **Content types** — each public scene picks what it accepts: **images**,
-  **videos**, **text** (saved as `.txt`), and/or a live **camera stream**. The
-  drop page adapts: a restricted upload field, a text box, and/or a big *Go live*
-  button.
+- **Projects / workspaces** — content groupings. The admin opens a project into a
+  **workspace**: a live **control room** (one column per attached player — click a
+  scene to make it active, click a clip to show it, transport + blackout, console
+  **MIDI learn**) plus scenes & media management.
+- **Scenes** — a folder of media inside a project. Every scene is reachable by its
+  **URL** (+QR via the share button); access is controlled simply by whether you
+  share that link. The admin can add media and **reorder** it (drag); the chosen
+  order drives playback. New uploads append in upload-time order. Each uploader
+  only ever sees and deletes *their own* contributions.
+- **Content types** — each scene picks what it accepts: **images**, **videos**,
+  **text** (saved as `.txt`), and/or a live **camera stream**. The drop page is a
+  **KXKM chat** that adapts: a message box, a media attach button, and/or *Go live*.
 - **Player modes** — *diaporama* (auto-advance), *manual* (keypress), or *MIDI*
   (a controller triggers clips — a hold/trigger surface). A live **camera
   takeover** overrides the playlist while anyone streams and reverts when they
@@ -72,9 +72,10 @@ npm start                            # node server.js
 
 ## URLs
 
-- `/admin` — management console (password-gated). Create projects, sources and
-  players; browse files with thumbnails; bulk delete/archive; configure players.
-- `/d/<dropToken>` — a drop box (open via its QR/link).
+- `/admin` — console (password-gated): a **Projects** grid → open a **workspace**
+  (live control room + scenes/media), and a **Players** pool page (configure
+  screens, share display URL). `/diag` for WebRTC.
+- `/d/<dropToken>` — a scene's **KXKM chat** drop page (open via its QR/link).
 - `/p/<playerToken>` — a player display (open on the target screen).
 
 The old `/admin` Filebrowser and the `/diaporama?folder=…` page are gone;
