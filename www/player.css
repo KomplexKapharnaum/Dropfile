@@ -11,6 +11,9 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
 }
 .counter.fresh { color: #ffd700; }
 .hidden { display: none !important; }
+/* kiosk: hide the pointer after a few seconds with no movement (cursor is
+   inherited, so this cascades to the stage/canvas). Any move brings it back. */
+body.cursor-hidden { cursor: none; }
 
 /* MIDI learn overlay */
 .midi-learn { position: fixed; inset: 0; background: rgba(8,10,14,.94); color: #e6e8ec; z-index: 90; padding: 20px; overflow: auto; font: 14px system-ui, sans-serif; }

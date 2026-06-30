@@ -24,8 +24,8 @@
     img.crossOrigin = 'anonymous';
     const video = document.createElement('video');
     video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous';
-    const audioEl = new Audio();            // dropped voice notes / music clips (unmuted)
-    audioEl.crossOrigin = 'anonymous';
+    const audioEl = new Audio();            // dropped voice notes / music clips
+    audioEl.crossOrigin = 'anonymous'; audioEl.muted = true;   // unmuted once sound is unlocked (see below)
 
     let settings = defaultSettings();
     let active = null;          // active scene info (incl. stream flag/mode)
@@ -607,12 +607,12 @@
         ctx.restore();
     }
 
-    // audio: active (newest) stream only, others muted
+    // audio: active (newest) stream only, others muted (and all muted until unlocked)
     function updateAudio() {
         const list = receiver.list();
         list.forEach((s, i) => {
             const isActive = (i === list.length - 1);
-            s.video.muted = !isActive;
+            s.video.muted = !isActive || !soundOn;
             if (isActive) { const p = s.video.play(); if (p && p.catch) p.catch(() => {}); }
         });
     }
@@ -621,6 +621,48 @@
         if (streaming) { counter.classList.add('fresh'); counter.textContent = '● ' + receiver.list().length + ' live'; return; }
         if (playingFresh) { counter.classList.add('fresh'); counter.textContent = '★ ' + fresh.length + ' fresh'; }
         else { counter.classList.remove('fresh'); counter.textContent = queue.length ? (index + 1) + ' / ' + queue.length : ''; }
+    }
+
+    // ---- audio autoplay / unmute ----------------------------------------
+    // Stations start MUTED so playback always autostarts (muted media is never
+    // gesture-gated). We then try to turn sound on right away: kiosks launched
+    // with an autoplay-allowed policy (no user-gesture requirement) succeed and
+    // play with sound immediately. Where the browser still gates audio behind a
+    // gesture, sound switches on at the first interaction (click / double-click /
+    // right-click / key / touch).
+    let soundOn = false;
+
+    function applySound() { video.muted = !soundOn; audioEl.muted = !soundOn; }
+
+    function enableSound() {
+        if (soundOn) return;
+        soundOn = true;
+        applySound();
+        // make whatever is on right now audible, without waiting for the next item
+        if (streaming) { if (receiver) updateAudio(); }
+        else if (current && !paused && !blackedOut) {
+            if (current.type === 'video') { const p = video.play(); if (p && p.catch) p.catch(() => {}); }
+            else if (current.type === 'audio') { const p = audioEl.play(); if (p && p.catch) p.catch(() => {}); }
+        }
+    }
+
+    // Does this browser allow sound without a user gesture? A freshly-created
+    // AudioContext is 'running' when autoplay is permitted (kiosk no-gesture
+    // policy) and 'suspended' when a gesture is still required.
+    function probeAutoSound() {
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            const ac = new AC();
+            if (ac.state === 'running') enableSound();
+            if (ac.close) ac.close();
+        } catch (e) {}
+    }
+
+    function armSoundGesture() {
+        const opts = { once: true, passive: true };
+        ['pointerdown', 'keydown', 'touchend'].forEach(ev =>
+            window.addEventListener(ev, enableSound, opts));
     }
 
     function toggleFullscreen() {
@@ -641,6 +683,24 @@
     stage.addEventListener('dblclick', () => toggleFullscreen());
     window.addEventListener('resize', layout);
 
+    // ---- idle cursor hide (kiosk) ----
+    // Hide the pointer after a few seconds without movement; any move (or a
+    // touch) brings it straight back. Not gated on the Fullscreen API: --kiosk
+    // windows are OS-fullscreen and report no fullscreenElement, so gating there
+    // would defeat the point. The player page is display-only anyway.
+    let cursorTimer = null;
+    function pokeCursor() {
+        document.body.classList.remove('cursor-hidden');
+        if (cursorTimer) clearTimeout(cursorTimer);
+        cursorTimer = setTimeout(() => document.body.classList.add('cursor-hidden'), 3000);
+    }
+    window.addEventListener('mousemove', pokeCursor);
+    window.addEventListener('mousedown', pokeCursor);
+    pokeCursor();        // arm the initial hide timer
+
+    applySound();        // start muted so autoplay never blocks
+    probeAutoSound();    // kiosks with no-gesture autoplay get sound immediately
+    armSoundGesture();   // everywhere else, first interaction turns sound on
     layout();
     reload();
 })();
