@@ -1,26 +1,36 @@
 // Socket.IO wiring:
-//  - player display rooms (live settings / active / new-media broadcast)
-//  - WebRTC stream signaling for camera takeover (mesh; streamers offer,
-//    players answer). One stream room per scene: 'stream:<sceneId>'.
+//  - player display rooms (live settings / active / new-media / command)
+//  - player -> admin live status feedback ('admins' room)
+//  - WebRTC stream signaling for camera takeover (mesh)
 const model = require('../lib/model');
 
 module.exports = function (io, ctx) {
+    const liveStatus = {}; // playerId -> last reported status (in-memory)
+
     io.on('connection', (socket) => {
         socket.on('player-join', (token) => {
             const player = model.findPlayerByToken(String(token || ''));
-            if (player) socket.join('player:' + player.token);
+            if (player) { socket.join('player:' + player.token); socket.data.playerId = player.id; }
+        });
+
+        // admin console listens for live player status
+        socket.on('admin-join', () => { socket.join('admins'); socket.emit('status-snapshot', liveStatus); });
+
+        // a player reports what it is currently showing
+        socket.on('player-status', (msg) => {
+            const player = model.findPlayerByToken(String((msg && msg.token) || ''));
+            if (!player) return;
+            liveStatus[player.id] = (msg && msg.status) || null;
+            io.to('admins').emit('player-status', { playerId: player.id, status: liveStatus[player.id] });
         });
 
         // ---- WebRTC stream signaling ----
         socket.on('stream-join', (msg, ack) => {
             const role = (msg && msg.role === 'player') ? 'player' : 'streamer';
             let sceneId = null, name = '';
-
             if (role === 'streamer') {
                 const found = model.findSourceByDropToken(String((msg && msg.token) || ''));
-                if (!found || !(found.source.accept && found.source.accept.stream)) {
-                    return ack && ack({ error: 'streaming not available' });
-                }
+                if (!found || !(found.source.accept && found.source.accept.stream)) return ack && ack({ error: 'streaming not available' });
                 sceneId = found.source.id;
                 name = String((msg && msg.name) || 'guest').slice(0, 24);
             } else {
@@ -28,12 +38,9 @@ module.exports = function (io, ctx) {
                 if (!player || !player.activeSourceId) return ack && ack({ error: 'no active scene' });
                 sceneId = player.activeSourceId;
             }
-
             const room = 'stream:' + sceneId;
             socket.data.stream = { role, sceneId, name };
             socket.join(room);
-
-            // hand the joiner the peers already in the room
             const peers = [];
             const roomSet = io.sockets.adapter.rooms.get(room) || new Set();
             for (const sid of roomSet) {
@@ -52,12 +59,16 @@ module.exports = function (io, ctx) {
             socket.data.stream = null;
         }
         socket.on('stream-leave', leaveStream);
-
-        // relay SDP / ICE to a specific peer socket
         socket.on('rtc-offer', (m) => { if (m && m.to) io.to(m.to).emit('rtc-offer', { from: socket.id, sdp: m.sdp }); });
         socket.on('rtc-answer', (m) => { if (m && m.to) io.to(m.to).emit('rtc-answer', { from: socket.id, sdp: m.sdp }); });
         socket.on('rtc-ice', (m) => { if (m && m.to) io.to(m.to).emit('rtc-ice', { from: socket.id, candidate: m.candidate }); });
 
-        socket.on('disconnect', leaveStream);
+        socket.on('disconnect', () => {
+            leaveStream();
+            if (socket.data.playerId) {
+                liveStatus[socket.data.playerId] = { online: false };
+                io.to('admins').emit('player-status', { playerId: socket.data.playerId, status: liveStatus[socket.data.playerId] });
+            }
+        });
     });
 };

@@ -32,6 +32,7 @@ module.exports = function (ctx) {
             name: player.name,
             token: player.token,
             settings: player.settings,
+            selectedName: player.selectedName || null,
             active: playlistLib.activeInfo(player),
             media: playlistLib.playlist(UPLOAD_PATH, player),
             ice: turn.iceServers()

@@ -69,6 +69,7 @@ function adminApp() {
             { cmd: 'reload', label: 'Reload', icon: 'reload' }
         ],
         paused: {},
+        socket: null, status: {}, autoScroll: true, autoplayOpts: {},
         playerMidiMedia: {},   // player id -> active scene files (players page, local MIDI)
 
         icon(name) { return svgIcon(ICONS[name] || ''); },
@@ -79,6 +80,12 @@ function adminApp() {
             catch (e) { this.publicUrl = location.origin; }
             if (!this.publicUrl) this.publicUrl = location.origin;
             await this.loadAll();
+            if (window.io) {
+                this.socket = io();
+                this.socket.on('connect', () => this.socket.emit('admin-join'));
+                this.socket.on('status-snapshot', (snap) => { this.status = Object.assign({}, snap || {}); });
+                this.socket.on('player-status', (m) => { if (m && m.playerId) { this.status[m.playerId] = m.status; this.maybeScroll(m.playerId); } });
+            }
         },
         notify(m) { this.toast = m; setTimeout(() => { if (this.toast === m) this.toast = ''; }, 2000); },
         async guard(fn) { try { await fn(); } catch (e) { this.notify('Error: ' + e.message); } },
@@ -91,7 +98,7 @@ function adminApp() {
         async loadProjects() { this.projects = (await api('GET', '/projects')).projects; },
         async loadPlayers() {
             this.players = (await api('GET', '/players')).players;
-            this.players.forEach(pl => { if (pl.settings && pl.settings.playMode === 'midi') this.loadPlayerMidiMedia(pl); });
+            this.players.forEach(pl => { if (pl.activeSourceId) this.loadPlayerMidiMedia(pl); });
         },
         project() { return this.projects.find(p => p.id === this.projectId) || null; },
         replaceProject(project) {
@@ -209,9 +216,35 @@ function adminApp() {
                 this.notify('▸ ' + f.name);
             });
         },
-        setMode(pl, mode) { pl.settings.playMode = mode; this.saveSettings(pl); },
+        autoplay(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'autoplay' }); api('POST', '/players/' + pl.id + '/command', { cmd: 'autoplay' }).then(() => this.loadPlayers()).catch(() => {}); },
         transport(pl, cmd) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'transport', cmd }); api('POST', '/players/' + pl.id + '/command', { cmd }).catch(() => {}); },
         blackout(pl) { if (this.consoleLearn) return this.learnConsole(pl.id, { type: 'blackout' }); api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {}); },
+        toggleAutoplayOpts(pl) { this.autoplayOpts[pl.id] = !this.autoplayOpts[pl.id]; },
+
+        // ---- live status (from players) ----
+        statusOf(pl) { return this.status[pl.id] || null; },
+        statusLabel(pl) {
+            const s = this.status[pl.id];
+            if (!s) return '— no status';
+            if (s.online === false) return 'offline';
+            if (s.mode === 'stream') return '● live';
+            if (s.mode === 'black') return '⬛ blackout';
+            if (s.mode === 'stopped') return 'stopped';
+            if (s.mode === 'manual') return '▸ ' + (s.name || '?') + (s.paused ? ' · paused' : '');
+            return '⟳ ' + (s.name || '?') + ' · ' + (((s.index | 0) + 1)) + '/' + (s.count || 0) + (s.paused ? ' · paused' : '');
+        },
+        statusClass(pl) { const s = this.status[pl.id]; if (!s || s.online === false) return 'off'; if (s.mode === 'stream') return 'live'; if (s.mode === 'diaporama' && !s.paused) return 'playing'; if (s.mode === 'stopped' || s.mode === 'black') return 'off'; return 'on'; },
+        isCurrentClip(pl, f) { const s = this.status[pl.id]; return !!(s && (s.mode === 'manual' || s.mode === 'diaporama') && s.name === f.name); },
+        isAutoplaying(pl) { const s = this.status[pl.id]; return !!(s && s.mode === 'diaporama'); },
+        maybeScroll(playerId) {
+            if (!this.autoScroll) return;
+            const s = this.status[playerId]; if (!s || !s.name) return;
+            this.$nextTick(() => {
+                const cont = document.querySelector(`[data-cr-clips="${playerId}"]`); if (!cont) return;
+                const el = cont.querySelector(`[data-name="${(window.CSS && CSS.escape) ? CSS.escape(s.name) : s.name}"]`);
+                if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            });
+        },
 
         // ---- console MIDI (operator desk, per workspace) ----
         async ensureMidi() { if (this.midiBus || !window.MidiBus) return; const bus = new MidiBus(); bus.onpress = (k) => this.onMidiPress(k); bus.onports = (n) => { this.midiPorts = n; }; try { await bus.init(); this.midiBus = bus; } catch (e) { this.midiBus = null; this.notify('Web MIDI unavailable'); } },
@@ -241,6 +274,7 @@ function adminApp() {
         dispatchConsole(p, pl, a) {
             if (a.type === 'scene') api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: a.sceneId }).then(() => this.loadPlayers()).catch(() => {});
             else if (a.type === 'media') api('PUT', '/players/' + pl.id + '/active', { projectId: p.id, sourceId: a.sceneId }).then(() => api('POST', '/players/' + pl.id + '/command', { cmd: 'select', name: a.name })).catch(() => {});
+            else if (a.type === 'autoplay') api('POST', '/players/' + pl.id + '/command', { cmd: 'autoplay' }).catch(() => {});
             else if (a.type === 'transport') api('POST', '/players/' + pl.id + '/command', { cmd: a.cmd }).catch(() => {});
             else if (a.type === 'blackout') api('POST', '/players/' + pl.id + '/command', { cmd: 'blackout' }).catch(() => {});
         },

@@ -69,7 +69,8 @@
     socket.on('new-media', (m) => { fresh.push(m); updateCounter(); });
     socket.on('command', (c) => {
         const cmd = (typeof c === 'string') ? c : (c && c.cmd);
-        if (cmd === 'select') selectByName(c.name);
+        if (cmd === 'autoplay') { settings.playMode = 'diaporama'; start(); }
+        else if (cmd === 'select') { settings.playMode = 'manual'; selectByName(c.name); }
         else if (cmd === 'blackout') setBlackout(c.on === undefined ? !blackedOut : !!c.on);
         else doTransport(cmd);
     });
@@ -77,6 +78,17 @@
     function setStatus(msg) {
         statusEl.textContent = msg;
         overlay.style.display = msg ? 'flex' : 'none';
+    }
+
+    // report what we're showing, for the admin control room
+    function emitStatus() {
+        let mode = 'stopped', name = null;
+        if (streaming) mode = 'stream';
+        else if (blackedOut) mode = 'black';
+        else if (current) { mode = (settings.playMode === 'manual') ? 'manual' : 'diaporama'; name = current.name; }
+        else if (!queue.length) mode = 'stopped';
+        else mode = (settings.playMode === 'manual') ? 'manual' : 'diaporama';
+        try { socket.emit('player-status', { token, status: { online: true, mode, name, index: streaming ? -1 : index, count: queue.length, paused, blackout: blackedOut } }); } catch (e) {}
     }
 
     function reload() {
@@ -90,8 +102,11 @@
                 layout();
                 buildQueue();
                 updateStreamMembership();
-                if (!streaming) start();
-                if (!state.active) setStatus('No source selected');
+                if (!streaming) {
+                    if (settings.playMode === 'manual' && state.selectedName) { selectByName(state.selectedName); if (!current) start(); }
+                    else start();
+                }
+                if (!state.active) { setStatus('No source selected'); emitStatus(); }
             })
             .catch(e => setStatus(String(e.message || e)));
     }
@@ -109,7 +124,7 @@
         paused = false;
         playingFresh = false;
         index = 0;
-        if (!queue.length && !fresh.length) { setStatus('No media'); clearCanvas(); return; }
+        if (!queue.length && !fresh.length) { setStatus('No media'); clearCanvas(); emitStatus(); return; }
         setStatus('');
         next(true);
     }
@@ -153,6 +168,7 @@
         paused = true;
         clearTimers();
         if (current && current.type === 'video') video.pause();
+        emitStatus();
     }
     function play() {
         if (streaming || !paused) return;
@@ -160,6 +176,7 @@
         if (!current) { start(); return; }
         if (current.type === 'video') { const p = video.play(); if (p && p.catch) p.catch(() => {}); }
         else scheduleNext();
+        emitStatus();
     }
     function restart() {
         if (streaming) return;
@@ -194,6 +211,7 @@
         blackedOut = on;
         if (on) { clearTimers(); clearCanvas(); }
         else if (!streaming && current) redraw();
+        emitStatus();
     }
 
     // ---- MIDI dispatch ----
@@ -279,6 +297,7 @@
         current = item;
         setStatus('');
         updateCounter();
+        emitStatus();
         stopRaf();
         video.onended = null;
 
@@ -411,6 +430,7 @@
         }
         if (streaming) updateAudio();
         updateCounter();
+        emitStatus();
     }
 
     function startStreamRaf() { stopStreamRaf(); const loop = () => { drawStreams(); streamRaf = requestAnimationFrame(loop); }; loop(); }

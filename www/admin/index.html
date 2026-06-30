@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dropfile · Admin</title>
     <link rel="stylesheet" href="/admin/admin.css">
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/midi.js"></script>
     <script src="/admin/admin.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
@@ -76,14 +77,9 @@
 
                 <div class="player-config">
                     <fieldset class="settings">
-                        <legend>Playback</legend>
-                        <label class="field inline"><span>Mode</span>
-                            <select x-model="pl.settings.playMode" @change="saveSettings(pl)">
-                                <option value="diaporama">diaporama (auto)</option>
-                                <option value="manual">manual (keypress)</option>
-                                <option value="midi">MIDI (trigger surface)</option>
-                            </select></label>
-                        <label class="field inline" x-show="pl.settings.playMode !== 'manual' && pl.settings.playMode !== 'midi'"><span>Duration (s)</span>
+                        <legend>Auto-play</legend>
+                        <p class="muted hint">Mode (manual vs auto-play) is set live from a workspace's control room.</p>
+                        <label class="field inline"><span>Duration (s)</span>
                             <input type="number" min="1" step="1" x-model.number="pl.settings.imageDuration" @change="saveSettings(pl)"></label>
                         <label class="field inline"><span>Loop</span>
                             <select x-model="pl.settings.loop" @change="saveSettings(pl)"><option value="all">all media</option><option value="lastX">last X</option></select>
@@ -123,7 +119,7 @@
                         <label class="chk"><input type="checkbox" x-model="pl.settings.scaler.evenLineSuppression" @change="saveSettings(pl)"> even-line squash (vertical 50%)</label>
                     </fieldset>
 
-                    <fieldset class="settings" x-show="pl.settings.playMode==='midi'" x-cloak>
+                    <fieldset class="settings">
                         <legend>Player-local MIDI</legend>
                         <p class="muted hint">Controller plugged into the player screen. Map here or on the player (press <b>m</b>). Active scene: set it in a workspace.</p>
                         <div class="midi-rows">
@@ -165,6 +161,7 @@
                             <span x-html="icon('gear')"></span> <span x-text="consoleLearn ? 'MIDI learn — ON' : 'MIDI learn'"></span>
                         </button>
                         <span class="muted" x-text="midiPorts.length ? ('in: '+midiPorts.join(', ')) : ''"></span>
+                        <label class="chk small"><input type="checkbox" x-model="autoScroll"> auto-scroll</label>
                         <span class="spacer"></span>
                         <select class="attach-sel" @change="attachPlayer(project(), $event.target.value); $event.target.value=''">
                             <option value="">+ attach player…</option>
@@ -180,18 +177,22 @@
                                     <button class="iconbtn" title="Open display" @click="openShare(playerUrl(pl), pl.name)" x-html="icon('share')"></button>
                                     <button class="iconbtn danger" title="Detach" @click="detachPlayer(project(), pl)" x-html="icon('close')"></button>
                                 </div>
-                                <select class="mode-sel" x-model="pl.settings.playMode" @change="setMode(pl, $event.target.value)">
-                                    <option value="diaporama">diaporama (auto)</option>
-                                    <option value="manual">manual</option>
-                                    <option value="midi">MIDI</option>
-                                </select>
+                                <div class="cr-status" :class="statusClass(pl)" x-text="statusLabel(pl)"></div>
                                 <div class="cr-transport">
+                                    <button class="iconbtn ap" :class="{active: isAutoplaying(pl), learned: consoleKey(pl.id,{type:'autoplay'})}" title="Auto-play (diaporama)" @click="autoplay(pl)" x-html="icon('play')"></button>
                                     <button class="iconbtn" title="Restart" @click="transport(pl,'restart')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'restart'})}" x-html="icon('restart')"></button>
                                     <button class="iconbtn" title="Prev" @click="transport(pl,'prev')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'prev'})}" x-html="icon('prev')"></button>
-                                    <button class="iconbtn" title="Play" @click="transport(pl,'play')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'play'})}" x-html="icon('play')"></button>
                                     <button class="iconbtn" title="Pause" @click="transport(pl,'pause')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'pause'})}" x-html="icon('pause')"></button>
                                     <button class="iconbtn" title="Next" @click="transport(pl,'next')" :class="{learned: consoleKey(pl.id,{type:'transport',cmd:'next'})}" x-html="icon('next')"></button>
                                     <button class="iconbtn" title="Blackout" @click="blackout(pl)" :class="{learned: consoleKey(pl.id,{type:'blackout'})}">⬛</button>
+                                    <button class="iconbtn" title="Auto-play options" @click="toggleAutoplayOpts(pl)" x-html="icon('gear')"></button>
+                                </div>
+                                <div class="ap-opts" x-show="autoplayOpts[pl.id]" x-cloak>
+                                    <label class="field inline"><span>Duration</span><input class="xnum" type="number" min="1" x-model.number="pl.settings.imageDuration" @change="saveSettings(pl)"></label>
+                                    <label class="field inline"><span>Loop</span>
+                                        <select x-model="pl.settings.loop" @change="saveSettings(pl)"><option value="all">all</option><option value="lastX">last X</option></select>
+                                        <input class="xnum" type="number" min="1" x-show="pl.settings.loop==='lastX'" x-model.number="pl.settings.lastX" @change="saveSettings(pl)"></label>
+                                    <label class="chk small"><input type="checkbox" x-model="pl.settings.prioritizeFresh" @change="saveSettings(pl)"> prioritise new uploads</label>
                                 </div>
                                 <div class="cr-scenes">
                                     <template x-for="s in project().sources" :key="s.id">
@@ -202,9 +203,9 @@
                                     </template>
                                 </div>
                                 <template x-if="activeSceneOf(project(), pl)">
-                                    <div class="cr-clips">
+                                    <div class="cr-clips" :data-cr-clips="pl.id">
                                         <template x-for="f in filesOf(activeSceneOf(project(), pl))" :key="f.name">
-                                            <div class="cr-clip" :class="{learned: consoleKey(pl.id,{type:'media',sceneId:activeSceneOf(project(),pl).id,name:f.name})}" @click="playClip(project(), pl, activeSceneOf(project(),pl), f)">
+                                            <div class="cr-clip" :data-name="f.name" :class="{learned: consoleKey(pl.id,{type:'media',sceneId:activeSceneOf(project(),pl).id,name:f.name}), playing: isCurrentClip(pl, f)}" @click="playClip(project(), pl, activeSceneOf(project(),pl), f)">
                                                 <img :src="f.thumb" loading="lazy">
                                                 <span class="kbadge" x-show="consoleKey(pl.id,{type:'media',sceneId:activeSceneOf(project(),pl).id,name:f.name})" x-text="consoleKey(pl.id,{type:'media',sceneId:activeSceneOf(project(),pl).id,name:f.name})"></span>
                                             </div>

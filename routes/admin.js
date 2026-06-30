@@ -116,6 +116,7 @@ module.exports = function (ctx) {
             projectIds: pl.projectIds || [],
             activeProjectId: pl.activeProjectId || null,
             activeSourceId: pl.activeSourceId || null,
+            selectedName: pl.selectedName || null,
             settings: pl.settings
         };
     }
@@ -402,6 +403,7 @@ module.exports = function (ctx) {
         if (!pl) return res.status(404).json({ error: 'not found' });
         const projectId = String(req.body.projectId || '');
         const sourceId = String(req.body.sourceId || '');
+        pl.selectedName = null; // switching scene resets the manual selection
         if (!projectId && !sourceId) { // clear
             pl.activeProjectId = null; pl.activeSourceId = null;
             store.save(); broadcastActive(pl);
@@ -430,10 +432,13 @@ module.exports = function (ctx) {
     api.post('/players/:id/command', (req, res) => {
         const pl = store.data.players[req.params.id];
         if (!pl) return res.status(404).json({ error: 'not found' });
+        pl.settings = pl.settings || defaultSettings();
         const room = 'player:' + pl.token;
         const cmd = String(req.body.cmd || '');
         if (SIMPLE.includes(cmd)) io.to(room).emit('command', cmd);
-        else if (cmd === 'select') io.to(room).emit('command', { cmd: 'select', name: String(req.body.name || '') });
+        // autoplay => diaporama, select => manual hold; both persist so a player resumes after reload
+        else if (cmd === 'autoplay') { pl.settings.playMode = 'diaporama'; pl.selectedName = null; store.save(); io.to(room).emit('command', 'autoplay'); }
+        else if (cmd === 'select') { pl.settings.playMode = 'manual'; pl.selectedName = String(req.body.name || ''); store.save(); io.to(room).emit('command', { cmd: 'select', name: pl.selectedName }); }
         else if (cmd === 'blackout') io.to(room).emit('command', { cmd: 'blackout', on: req.body.on });
         else return res.status(400).json({ error: 'unknown command' });
         res.json({ ok: true });
