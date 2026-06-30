@@ -12,6 +12,7 @@ class CameraSender {
         this.stream = null;
         this.facing = 'environment';
         this.socket = null;
+        this.via = null;                        // host | srflx | relay (diagnostic)
     }
 
     async start() {
@@ -46,6 +47,7 @@ class CameraSender {
         this.stream.getTracks().forEach(t => pc.addTrack(t, this.stream));
         pc.onicecandidate = (e) => { if (e.candidate) this.socket.emit('rtc-ice', { to: playerId, candidate: e.candidate }); };
         pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'connected') this._reportVia(pc);
             if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) this._closePeer(playerId);
             this._status();
         };
@@ -64,7 +66,20 @@ class CameraSender {
         const ids = Object.keys(this.pcs);
         if (!ids.length) return this.onStatus('waiting for a screen…');
         const connected = ids.filter(id => this.pcs[id].connectionState === 'connected').length;
-        this.onStatus(connected ? ('● live · ' + connected + ' screen' + (connected > 1 ? 's' : '')) : 'connecting…');
+        const via = (connected && this.via) ? ' · via ' + this.via : '';
+        this.onStatus(connected ? ('● live · ' + connected + ' screen' + (connected > 1 ? 's' : '') + via) : 'connecting…');
+    }
+
+    // best-effort: which candidate type won (host/srflx/relay) — relay = TURN
+    async _reportVia(pc) {
+        try {
+            const stats = await pc.getStats();
+            let pairId = null, pair = null, local = null;
+            stats.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pairId = r.selectedCandidatePairId; });
+            stats.forEach(r => { if (r.type === 'candidate-pair' && (r.id === pairId || (r.nominated && r.state === 'succeeded'))) pair = r; });
+            if (pair) stats.forEach(r => { if (r.id === pair.localCandidateId) local = r; });
+            if (local) { this.via = local.candidateType; this._status(); }
+        } catch (e) {}
     }
 
     async flip() {

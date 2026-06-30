@@ -14,6 +14,14 @@ module.exports = function (ctx) {
         res.sendFile(path.join(__dirname, '..', 'www', 'player.html'));
     });
 
+    // WebRTC diagnostic page + the ICE servers it (and clients) use
+    router.get('/diag', (req, res) => {
+        res.sendFile(path.join(__dirname, '..', 'www', 'diag.html'));
+    });
+    router.get('/api/ice', (req, res) => {
+        res.json({ ice: turn.iceServers() });
+    });
+
     // full resolved state: settings + active source + playlist + ICE servers
     router.get('/api/player/:token', (req, res) => {
         const player = model.findPlayerByToken(req.params.token);

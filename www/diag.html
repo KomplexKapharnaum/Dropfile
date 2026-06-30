@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropfile · WebRTC diagnostic</title>
+    <style>
+        :root { --bg:#14161b; --panel:#1e2128; --line:#333845; --text:#e6e8ec; --muted:#8a91a0; --accent:#5b9dff; --good:#44d07b; --warn:#ffb454; --bad:#ff5b6e; }
+        * { box-sizing: border-box; }
+        body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,sans-serif; padding:20px; max-width:860px; margin:0 auto; }
+        h1 { font-size:20px; } h2 { font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:24px; }
+        .muted { color:var(--muted); }
+        button { background:var(--accent); color:#06122a; border:none; padding:10px 18px; border-radius:8px; font-weight:600; cursor:pointer; font-size:15px; }
+        button:disabled { opacity:.5; cursor:not-allowed; }
+        .verdict { padding:14px 16px; border-radius:10px; margin:14px 0; font-size:15px; border:1px solid var(--line); background:var(--panel); }
+        .verdict.good { border-color:var(--good); color:var(--good); }
+        .verdict.warn { border-color:var(--warn); color:var(--warn); }
+        .verdict.bad { border-color:var(--bad); color:var(--bad); }
+        table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+        th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+        th { color:var(--muted); font-weight:600; }
+        .tag { padding:1px 8px; border-radius:20px; font-size:12px; border:1px solid var(--line); }
+        .tag.relay { color:var(--good); border-color:var(--good); }
+        .tag.srflx { color:var(--accent); border-color:var(--accent); }
+        .tag.host { color:var(--muted); }
+        .tag.prflx { color:var(--warn); border-color:var(--warn); }
+        pre { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:12px; }
+        code { color:var(--accent); }
+        a { color:var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>WebRTC diagnostic <span class="muted">· ICE / coturn</span></h1>
+    <p class="muted">Gathers ICE candidates from this browser using the server's configured ICE servers.
+       <b>relay</b> candidates mean your <b>TURN</b> (coturn) works. Run it on the phone's network too (mobile data) for a real-world check.</p>
+
+    <button id="run">Run test</button>
+    <a href="/admin" style="margin-left:12px">← admin</a>
+
+    <div id="verdict"></div>
+
+    <h2>ICE servers</h2>
+    <pre id="servers">…</pre>
+
+    <h2>Candidates</h2>
+    <table>
+        <thead><tr><th>type</th><th>protocol</th><th>address</th><th>component</th></tr></thead>
+        <tbody id="cands"></tbody>
+    </table>
+
+    <script>
+    const $ = id => document.getElementById(id);
+    let pc = null;
+
+    async function run() {
+        $('run').disabled = true;
+        $('cands').innerHTML = '';
+        $('verdict').innerHTML = '';
+        const found = { host: 0, srflx: 0, relay: 0, prflx: 0 };
+        let serversForLog = [];
+
+        let ice = [];
+        try {
+            const r = await fetch('/api/ice');
+            ice = (await r.json()).ice || [];
+        } catch (e) {}
+        serversForLog = ice.map(s => ({ urls: s.urls, username: s.username ? '(set)' : undefined }));
+        $('servers').textContent = ice.length ? JSON.stringify(serversForLog, null, 2) : '(none — TURN_HOST / TURN_SECRET not set in .env)';
+
+        try { pc = new RTCPeerConnection({ iceServers: ice }); }
+        catch (e) { verdict('bad', 'Cannot create RTCPeerConnection: ' + e.message); $('run').disabled = false; return; }
+
+        pc.onicecandidate = (e) => {
+            if (!e.candidate) return finish(found);
+            const c = e.candidate.candidate || '';
+            const typ = (/ typ (\w+)/.exec(c) || [])[1] || '?';
+            const proto = (/^candidate:\S+ \d+ (\w+)/.exec(c) || [])[1] || '';
+            found[typ] = (found[typ] || 0) + 1;
+            addRow(typ, proto, e.candidate.address || (c.split(' ')[4] || ''), e.candidate.component || (e.candidate.sdpMLineIndex));
+        };
+        pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') finish(found); };
+
+        pc.createDataChannel('diag');
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        setTimeout(() => finish(found), 9000); // safety
+    }
+
+    let finished = false;
+    function finish(found) {
+        if (finished) return; finished = true;
+        if (found.relay > 0) verdict('good', '✅ TURN works — ' + found.relay + ' relay candidate(s). Cross-network streaming should connect.');
+        else if (found.srflx > 0) verdict('warn', '⚠ STUN works (' + found.srflx + ' srflx) but NO relay candidates. Phones on different/locked-down networks may fail — check coturn: TURN_SECRET vs static-auth-secret, external-ip, ports 3478/5349 + relay range open.');
+        else if (found.host > 0) verdict('bad', '❌ Only host candidates — no STUN/TURN reachable. Set TURN_HOST/TURN_SECRET in .env and verify coturn is running and reachable.');
+        else verdict('bad', '❌ No candidates gathered.');
+        $('run').disabled = false;
+        try { pc && pc.close(); } catch (e) {}
+    }
+
+    function verdict(cls, msg) { const d = $('verdict'); d.className = 'verdict ' + cls; d.textContent = msg; }
+    function addRow(typ, proto, addr, comp) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><span class="tag ${typ}">${typ}</span></td><td>${proto}</td><td>${addr || ''}</td><td>${comp || ''}</td>`;
+        $('cands').appendChild(tr);
+    }
+
+    $('run').onclick = () => { finished = false; run(); };
+    </script>
+</body>
+</html>
