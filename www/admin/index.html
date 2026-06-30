@@ -126,6 +126,7 @@
                                     <span class="sidx" draggable="true" title="Drag to reorder" @dragstart="sceneDragStart(project(),idx,$event)" @dragend="sceneDragEnd(project())" x-text="pad(idx+1)"></span>
                                     <strong class="scene-name" x-text="s.name"></strong>
                                     <button class="iconbtn" title="Rename scene" @click="renameScene(project(),s)" x-html="icon('pencil')"></button>
+                                    <button class="iconbtn" :class="{on: s.welcome}" title="Welcome message — instructions shown to uploaders" @click="toggleWelcome(s)" x-html="icon('message')"></button>
                                     <span class="spacer"></span>
                                     <button class="iconbtn" title="Share" @click="openShare(dropUrl(s), project().name + ' / ' + s.name)" x-html="icon('share')"></button>
                                     <button class="iconbtn danger" title="Delete scene" @click="deleteScene(project(),s)" x-html="icon('trash')"></button>
@@ -141,6 +142,10 @@
                                         <option value="replace" :selected="s.streamMode!=='grid'">single</option>
                                         <option value="grid" :selected="s.streamMode==='grid'">grid</option>
                                     </select>
+                                </div>
+                                <div class="sc-welcome" x-show="welcomeOpen[s.id]" x-cloak>
+                                    <textarea rows="2" maxlength="500" x-model="s.welcome" @change="saveWelcome(project(),s)"
+                                        placeholder="Welcome message — shown to people who open this drop, as an incoming message (e.g. “Send us your best photo of the show!”)"></textarea>
                                 </div>
                                 <button class="sc-media" @click="openMediaModal(project(),s)">
                                     <span x-html="icon('image')"></span>

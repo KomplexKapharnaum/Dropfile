@@ -51,6 +51,7 @@ module.exports = function (ctx) {
             sceneId: req.dropSource.id,
             allowSelfDelete: !!req.dropSource.allowSelfDelete,
             accept: req.dropSource.accept || { image: true, video: true, audio: false, text: false, stream: false },
+            welcome: req.dropSource.welcome || '',   // operator's intro, shown as an incoming message
             ice: turn.iceServers()
         });
     });

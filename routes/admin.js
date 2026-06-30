@@ -65,7 +65,7 @@ module.exports = function (ctx) {
             id: sid, name, folder,
             dropToken: ids.token(), allowSelfDelete: true, order: [],
             accept: accept ? cleanAccept(accept) : defaultAccept(),
-            streamMode: 'replace', createdAt: Date.now()
+            welcome: '', streamMode: 'replace', createdAt: Date.now()
         };
         p.sources = p.sources || {};
         p.sources[sid] = scene;
@@ -81,6 +81,7 @@ module.exports = function (ctx) {
             dropToken: s.dropToken,
             allowSelfDelete: !!s.allowSelfDelete,
             accept: s.accept ? cleanAccept(s.accept) : defaultAccept(),
+            welcome: s.welcome || '',
             streamMode: s.streamMode === 'grid' ? 'grid' : 'replace',
             count: sceneCount(p, s)
         };
@@ -293,6 +294,7 @@ module.exports = function (ctx) {
         const s = req._source;
         if (req.body.name) s.name = String(req.body.name).trim();
         if (typeof req.body.allowSelfDelete === 'boolean') s.allowSelfDelete = req.body.allowSelfDelete;
+        if (typeof req.body.welcome === 'string') s.welcome = req.body.welcome.slice(0, 500);
         if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
         if (req.body.streamMode === 'replace' || req.body.streamMode === 'grid') s.streamMode = req.body.streamMode;
         store.save();

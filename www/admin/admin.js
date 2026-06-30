@@ -44,7 +44,8 @@ const ICONS = {
     restart: '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>',
     stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
     cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>',
-    monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>'
+    monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+    message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'
 };
 
 function adminApp() {
@@ -57,7 +58,7 @@ function adminApp() {
         deviceTypes: [],
         toast: '',
         // scene/media explorer state (keyed by scene id)
-        expanded: {}, files: {}, sel: {},
+        expanded: {}, files: {}, sel: {}, welcomeOpen: {},
         uploading: {}, uploadTarget: null,
         // overlays
         share: { open: false, url: '', title: '' },
@@ -208,7 +209,9 @@ function adminApp() {
         // ---- scenes ----
         addScene(p) { const name = prompt('Scene name', 'Scene'); if (name === null) return; this.guard(async () => { const r = await api('POST', '/projects/' + p.id + '/sources', { name: name.trim() || 'Scene' }); this.replaceProject(r.project); }); },
         renameScene(p, s) { const name = prompt('Scene name', s.name); if (!name) return; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { name: name.trim() }); this.replaceProject(r.project); }); },
-        deleteScene(p, s) { if (!confirm('Delete scene "' + s.name + '"? Files stay on disk.')) return; this.guard(async () => { const r = await api('DELETE', `/projects/${p.id}/sources/${s.id}`); this.replaceProject(r.project); delete this.expanded[s.id]; delete this.files[s.id]; delete this.sel[s.id]; }); },
+        deleteScene(p, s) { if (!confirm('Delete scene "' + s.name + '"? Files stay on disk.')) return; this.guard(async () => { const r = await api('DELETE', `/projects/${p.id}/sources/${s.id}`); this.replaceProject(r.project); delete this.expanded[s.id]; delete this.files[s.id]; delete this.sel[s.id]; delete this.welcomeOpen[s.id]; }); },
+        toggleWelcome(s) { this.welcomeOpen[s.id] = !this.welcomeOpen[s.id]; },
+        saveWelcome(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { welcome: s.welcome || '' }); this.replaceProject(r.project); }); },
         toggleSelfDelete(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { allowSelfDelete: !s.allowSelfDelete }); this.replaceProject(r.project); }); },
         acceptAll(s) { return !!(s.accept && s.accept.image && s.accept.video && s.accept.audio && s.accept.text && s.accept.stream); },
         setAcceptAll(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept: { image: true, video: true, audio: true, text: true, stream: true } }); this.replaceProject(r.project); }); },

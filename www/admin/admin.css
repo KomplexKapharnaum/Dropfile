@@ -111,6 +111,9 @@ button .ic, .btn .ic { width: 15px; height: 15px; }
 .sc-top .scene-name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-types { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .sc-media { width: 100%; justify-content: center; background: var(--panel2); }
+.sc-top .iconbtn.on { color: var(--accent); border-color: var(--accent); }
+.sc-welcome textarea { width: 100%; box-sizing: border-box; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 8px 9px; font: inherit; font-size: 13px; line-height: 1.45; resize: vertical; min-height: 44px; }
+.sc-welcome textarea:focus { border-color: var(--accent); outline: none; }
 .scene-name { font-weight: 600; }
 .sidx { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 22px; padding: 0 4px; border-radius: 5px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; cursor: grab; flex: none; }
 .sidx:active { cursor: grabbing; }
