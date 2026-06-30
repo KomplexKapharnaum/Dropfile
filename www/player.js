@@ -36,6 +36,7 @@
     let rafId = null;
     let paused = false;
     let blackedOut = false;
+    let textContent = '';       // current text clip's body (when current.type === 'text')
     let midi = null;
     // camera takeover
     let receiver = null;
@@ -278,7 +279,7 @@
         const action = { type: 'media', name: m.name };
         const k = keyForAction(action);
         if (m.type === 'image') { const img = document.createElement('img'); img.src = m.url; div.appendChild(img); }
-        else { const ph = document.createElement('div'); ph.className = 'ml-ph'; ph.textContent = '▶'; div.appendChild(ph); }
+        else { const ph = document.createElement('div'); ph.className = 'ml-ph'; ph.textContent = m.type === 'text' ? 'T' : '▶'; div.appendChild(ph); }
         const key = document.createElement('span'); key.className = 'ml-key'; key.textContent = k ? midiKeyLabel(k) : 'tap to learn';
         div.appendChild(key);
         div.onclick = () => arm(action, key);
@@ -306,6 +307,11 @@
             img.onerror = () => scheduleNext();
             img.src = item.url;
             if (img.complete && img.naturalWidth) { redraw(); scheduleNext(); }
+        } else if (item.type === 'text') {
+            textContent = '';
+            fetch(item.url).then(r => r.text())
+                .then(t => { textContent = String(t || '').slice(0, 1500); redraw(); scheduleNext(); })
+                .catch(() => { textContent = ''; redraw(); scheduleNext(); });
         } else {
             video.onloadeddata = () => startRaf();
             video.onended = () => next();
@@ -389,6 +395,7 @@
     function redraw() {
         clearCanvas();
         if (blackedOut) return;
+        if (current && current.type === 'text') { drawText(); return; }
         const m = mediaIntrinsic();
         if (!m) return;
         const sc = settings.scaler;
@@ -407,6 +414,59 @@
         if (rot) ctx.rotate(rot * Math.PI / 180);
         try { ctx.drawImage(m.el, -size.w / 2, -size.h / 2, size.w, size.h); } catch (e) {}
         ctx.restore();
+    }
+
+    // draw the current text clip, auto-fitted and centred, honouring rotation +
+    // the even-line squash (same transform setup as the image path).
+    function drawText() {
+        const sc = settings.scaler;
+        const C = container();
+        ctx.save();
+        ctx.scale(canvas.width / C.w, canvas.height / C.h);
+        const rot = ((sc.rotation % 360) + 360) % 360;
+        const swap = (rot === 90 || rot === 270);
+        const boxW = swap ? C.h : C.w, boxH = swap ? C.w : C.h;
+        ctx.translate(C.w / 2, C.h / 2);
+        if (rot) ctx.rotate(rot * Math.PI / 180);
+        drawWrappedText((textContent || '').trim(), boxW, boxH);
+        ctx.restore();
+    }
+
+    function wrapText(text, maxW, fontSpec) {
+        ctx.font = fontSpec;
+        const out = [];
+        for (const para of text.split('\n')) {
+            const words = para.split(/\s+/).filter(Boolean);
+            if (!words.length) { out.push(''); continue; }
+            let line = '';
+            for (const w of words) {
+                const test = line ? line + ' ' + w : w;
+                if (ctx.measureText(test).width > maxW && line) { out.push(line); line = w; }
+                else line = test;
+            }
+            out.push(line);
+        }
+        return out;
+    }
+
+    function drawWrappedText(text, boxW, boxH) {
+        if (!text) return;
+        const maxW = boxW * 0.86, maxH = boxH * 0.86;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff';
+        let size = Math.max(12, Math.min(Math.round(boxH * 0.5), 240));
+        let lines = [];
+        const fontAt = (px) => `600 ${px}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+        for (; size >= 12; size -= Math.max(2, Math.round(size * 0.08))) {
+            lines = wrapText(text, maxW, fontAt(size));
+            const widest = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
+            if (lines.length * size * 1.25 <= maxH && widest <= maxW) break;
+        }
+        ctx.font = fontAt(Math.max(12, size));
+        const lh = Math.max(12, size) * 1.25;
+        let y = -(lines.length * lh) / 2 + lh / 2;
+        for (const ln of lines) { ctx.fillText(ln, 0, y); y += lh; }
     }
 
     // ---- camera takeover ----

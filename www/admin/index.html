@@ -295,6 +295,7 @@
                                 <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
                                 <img :src="f.thumb" loading="lazy" alt="">
                                 <span class="vbadge" x-show="f.type==='video'">▶</span>
+                                <span class="vbadge" x-show="f.type==='text'">T</span>
                             </div>
                         </template>
                         <p class="muted" x-show="(files[s.id]||[]).length===0">Empty — add media or share the drop link.</p>
@@ -326,6 +327,7 @@
         <div class="lb-stage" @click.stop>
             <template x-if="lbCurrent() && lbCurrent().type==='image'"><img :src="lbCurrent().url" alt=""></template>
             <template x-if="lbCurrent() && lbCurrent().type==='video'"><video :src="lbCurrent().url" controls autoplay loop></video></template>
+            <template x-if="lbCurrent() && lbCurrent().type==='text'"><iframe class="lb-text" :src="lbCurrent().url" sandbox=""></iframe></template>
         </div>
         <button class="iconbtn lb-nav" @click.stop="lbNext()" x-html="icon('right')"></button>
         <button class="iconbtn lb-close" @click.stop="lbClose()" x-html="icon('close')"></button>

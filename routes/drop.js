@@ -59,7 +59,7 @@ module.exports = function (ctx) {
         const filename = req.file.filename;
         const type = mediaType(filename);
         const accept = req.dropSource.accept || { image: true, video: true, text: false };
-        if (!type || (type === 'image' && !accept.image) || (type === 'video' && !accept.video)) {
+        if (!type || !accept[type]) {
             try { fs.unlinkSync(req.file.path); } catch (e) {}
             return res.status(415).json({ error: 'file type not allowed here' });
         }
@@ -101,6 +101,10 @@ module.exports = function (ctx) {
         store.data.uploads[sid] = store.data.uploads[sid] || {};
         store.data.uploads[sid][fileId] = { filename, uploaderToken: visitor, nick, time: Date.now(), type: 'text' };
         store.save();
+
+        // push to any player currently displaying this source (fresh-queue)
+        const payload = { name: filename, type: 'text', url: model.mediaUrl(req.dropProject, req.dropSource, filename) };
+        for (const p of model.playersForSource(sid)) io.to('player:' + p.token).emit('new-media', payload);
         res.json({ ok: true, fileId });
     });
 
