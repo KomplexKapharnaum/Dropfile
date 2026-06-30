@@ -8,6 +8,7 @@ class CameraSender {
         this.getNick = opts.getNick || (() => 'guest');
         this.preview = opts.preview;            // <video> element
         this.onStatus = opts.onStatus || (() => {});
+        this.labels = opts.labels || {};        // optional i18n status strings
         this.pcs = {};                          // playerSocketId -> RTCPeerConnection
         this.stream = null;
         this.facing = 'environment';
@@ -34,7 +35,7 @@ class CameraSender {
 
     _join() {
         this.socket.emit('stream-join', { role: 'streamer', token: this.token, name: this.getNick() }, (resp) => {
-            if (!resp || resp.error) { this.onStatus('⚠ ' + ((resp && resp.error) || 'cannot start')); return; }
+            if (!resp || resp.error) { this.onStatus('⚠ ' + ((resp && resp.error) || this.labels.cannotStart || 'cannot start')); return; }
             (resp.peers || []).filter(p => p.role === 'player').forEach(p => this._offerTo(p.id));
             this._status();
         });
@@ -63,11 +64,14 @@ class CameraSender {
     _closePeer(id) { const pc = this.pcs[id]; if (pc) { try { pc.close(); } catch (e) {} delete this.pcs[id]; } this._status(); }
 
     _status() {
+        const L = this.labels;
         const ids = Object.keys(this.pcs);
-        if (!ids.length) return this.onStatus('waiting for a screen…');
+        if (!ids.length) return this.onStatus(L.waiting || 'waiting for a screen…');
         const connected = ids.filter(id => this.pcs[id].connectionState === 'connected').length;
         const via = (connected && this.via) ? ' · via ' + this.via : '';
-        this.onStatus(connected ? ('● live · ' + connected + ' screen' + (connected > 1 ? 's' : '') + via) : 'connecting…');
+        if (!connected) return this.onStatus(L.connecting || 'connecting…');
+        const live = L.live ? L.live(connected) : ('● live · ' + connected + ' screen' + (connected > 1 ? 's' : ''));
+        this.onStatus(live + via);
     }
 
     // best-effort: which candidate type won (host/srflx/relay) — relay = TURN

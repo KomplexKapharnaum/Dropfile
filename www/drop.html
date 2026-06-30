@@ -15,8 +15,8 @@
             <div class="ch-title">KXKM</div>
             <div id="sub" class="ch-sub"></div>
         </div>
-        <button id="liveBtn" class="hbtn live hidden" title="Go live with your camera"></button>
-        <button id="nickBtn" class="hbtn nick" title="Your name"><span class="nick-ic"></span><span id="nickName">…</span></button>
+        <button id="liveBtn" class="hbtn live hidden" data-i18n-title="live_title" title="Go live with your camera"></button>
+        <button id="nickBtn" class="hbtn nick" data-i18n-title="nick_title" title="Your name"><span class="nick-ic"></span><span id="nickName">…</span></button>
     </header>
 
     <div id="timeline" class="timeline">
@@ -24,9 +24,9 @@
     </div>
 
     <form id="composer" class="composer">
-        <button type="button" id="attachBtn" class="cbtn attach" title="Add media"><span id="attachIc" class="attach-ic"></span><span id="attachLabel" class="attach-label"></span></button>
-        <input type="text" id="textInput" class="ctext" placeholder="Message…" autocomplete="off" enterkeyhint="send">
-        <button type="submit" id="sendBtn" class="cbtn send" title="Send"></button>
+        <button type="button" id="attachBtn" class="cbtn attach" data-i18n-title="attach_title" title="Add media"><span id="attachIc" class="attach-ic"></span><span id="attachLabel" class="attach-label"></span></button>
+        <input type="text" id="textInput" class="ctext" data-i18n-ph="ph_message" placeholder="Message…" autocomplete="off" enterkeyhint="send">
+        <button type="submit" id="sendBtn" class="cbtn send" data-i18n-title="send" title="Send"></button>
     </form>
 
     <!-- hidden pickers: native OS camera / library -->
@@ -42,35 +42,35 @@
             <div class="sheet-grip"></div>
             <div id="sheetTitle" class="sheet-title">Send</div>
             <div id="sheetRows" class="sheet-rows"></div>
-            <button type="button" id="sheetCancel" class="sheet-cancel">Cancel</button>
+            <button type="button" id="sheetCancel" class="sheet-cancel" data-i18n="cancel">Cancel</button>
         </div>
     </div>
 
     <!-- nickname modal -->
     <div id="nickModal" class="nick-modal hidden">
         <div class="nm-box">
-            <h3>Your name</h3>
-            <p class="nm-hint">Shown on the screen with what you send.</p>
-            <input id="nickField" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off">
-            <button id="nickSave" class="primary">OK</button>
+            <h3 data-i18n="nick_h">Your name</h3>
+            <p class="nm-hint" data-i18n="nick_hint">Shown on the screen with what you send.</p>
+            <input id="nickField" type="text" maxlength="20" data-i18n-ph="nick_ph" placeholder="e.g. Alex" autocomplete="off">
+            <button id="nickSave" class="primary" data-i18n="ok">OK</button>
         </div>
     </div>
 
     <!-- audio recorder -->
     <div id="recOverlay" class="rec-overlay hidden">
         <div class="rec-card">
-            <button type="button" id="recClose" class="rec-close" title="Close"></button>
-            <div class="rec-title">Voice message</div>
+            <button type="button" id="recClose" class="rec-close" data-i18n-title="close" title="Close"></button>
+            <div class="rec-title" data-i18n="rec_title">Voice message</div>
             <div id="recTime" class="rec-time">0:00</div>
             <div class="rec-stage">
                 <span class="rec-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             </div>
             <audio id="recPreview" class="rec-preview hidden" controls playsinline></audio>
-            <div id="recHint" class="rec-hint">Tap the mic to start</div>
+            <div id="recHint" class="rec-hint" data-i18n="rec_start">Tap the mic to start</div>
             <div class="rec-controls">
-                <button type="button" id="recRetake" class="rec-btn ghost hidden">Retake</button>
+                <button type="button" id="recRetake" class="rec-btn ghost hidden" data-i18n="retake">Retake</button>
                 <button type="button" id="recToggle" class="rec-btn record" title="Record"></button>
-                <button type="button" id="recSend" class="rec-btn primary hidden">Send</button>
+                <button type="button" id="recSend" class="rec-btn primary hidden" data-i18n="send">Send</button>
             </div>
         </div>
     </div>
@@ -79,12 +79,12 @@
     <div id="camOverlay" class="cam-overlay hidden">
         <video id="camPreview" autoplay muted playsinline></video>
         <div class="cam-top">
-            <span class="cam-live">● LIVE</span>
-            <span id="camStatus" class="cam-status">starting…</span>
+            <span class="cam-live" data-i18n="cam_live_badge">● LIVE</span>
+            <span id="camStatus" class="cam-status" data-i18n="cam_starting">starting…</span>
         </div>
         <div class="cam-bar">
-            <button id="camFlip">↺ Flip camera</button>
-            <button id="camStop" class="stop">■ Stop</button>
+            <button id="camFlip" data-i18n="cam_flip">↺ Flip camera</button>
+            <button id="camStop" class="stop" data-i18n="cam_stop">■ Stop</button>
         </div>
     </div>
 

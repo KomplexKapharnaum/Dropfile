@@ -7,6 +7,79 @@
     const token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
     const $ = id => document.getElementById(id);
 
+    // ---- i18n (English / French, by browser language; fallback English) ----
+    const STR = {
+        en: {
+            live_title: 'Go live with your camera', nick_title: 'Your name', attach_title: 'Add media',
+            ph_message: 'Message…', send: 'Send', cancel: 'Cancel', ok: 'OK',
+            nick_h: 'Your name', nick_hint: 'Shown on the screen with what you send.', nick_ph: 'e.g. Alex',
+            rec_title: 'Voice message', rec_start: 'Tap the mic to start', rec_recording: 'Recording… tap to stop',
+            rec_listen: 'Listen back, then send', retake: 'Retake', close: 'Close',
+            cam_live_badge: '● LIVE', cam_starting: 'starting…', cam_flip: '↺ Flip camera', cam_stop: '■ Stop',
+            empty_stream: 'Tap the camera in the top bar to go live on the big screen.',
+            empty_default: 'Only you can see what you send here — it appears on the big screen.',
+            send_image: 'Send photo', send_video: 'Send video', send_audio: 'Send audio',
+            row_camera: 'Camera', row_camera_sub: 'Take a photo',
+            row_video: 'Video camera', row_video_sub: 'Record a video',
+            row_lib_both: 'Photo & video library', row_lib_photo: 'Photo library', row_lib_video: 'Video library',
+            row_lib_sub: 'Choose from your device',
+            row_rec: 'Record audio', row_rec_sub: 'Record a voice message',
+            row_audiofile: 'Audio file', row_audiofile_sub: 'Choose an audio file',
+            sheet_title_audio: 'Send audio', sheet_title_media: 'Send media',
+            meta_notsent: 'Not sent', meta_delete: 'Delete',
+            toast_msg_failed: 'Message not sent', toast_type: 'That file type isn’t accepted here',
+            toast_upload_failed: 'Upload failed', toast_upload_conn: 'Upload failed — check your connection',
+            toast_delete_failed: 'Could not delete', toast_rec_unsupported: 'Recording isn’t supported on this browser',
+            toast_mic_denied: 'Microphone permission denied',
+            day_today: 'Today', day_yesterday: 'Yesterday',
+            cam_waiting: 'waiting for a screen…', cam_connecting: 'connecting…', cam_cannot: 'cannot start',
+            cam_error: 'Camera error: ', cam_live: (n) => '● live · ' + n + ' screen' + (n > 1 ? 's' : '')
+        },
+        fr: {
+            live_title: 'Filmer en direct', nick_title: 'Votre nom', attach_title: 'Ajouter un média',
+            ph_message: 'Message…', send: 'Envoyer', cancel: 'Annuler', ok: 'OK',
+            nick_h: 'Votre nom', nick_hint: 'Affiché à l’écran avec ce que vous envoyez.', nick_ph: 'ex. Alex',
+            rec_title: 'Message vocal', rec_start: 'Touchez le micro pour démarrer', rec_recording: 'Enregistrement… touchez pour arrêter',
+            rec_listen: 'Réécoutez, puis envoyez', retake: 'Recommencer', close: 'Fermer',
+            cam_live_badge: '● EN DIRECT', cam_starting: 'démarrage…', cam_flip: '↺ Changer de caméra', cam_stop: '■ Arrêter',
+            empty_stream: 'Touchez la caméra en haut pour passer en direct sur le grand écran.',
+            empty_default: 'Vous seul voyez ce que vous envoyez ici — cela apparaît sur le grand écran.',
+            send_image: 'Envoyer photo', send_video: 'Envoyer vidéo', send_audio: 'Envoyer audio',
+            row_camera: 'Appareil photo', row_camera_sub: 'Prendre une photo',
+            row_video: 'Caméra vidéo', row_video_sub: 'Filmer une vidéo',
+            row_lib_both: 'Photos et vidéos', row_lib_photo: 'Photothèque', row_lib_video: 'Vidéothèque',
+            row_lib_sub: 'Choisir sur votre appareil',
+            row_rec: 'Enregistrer un audio', row_rec_sub: 'Enregistrer un message vocal',
+            row_audiofile: 'Fichier audio', row_audiofile_sub: 'Choisir un fichier audio',
+            sheet_title_audio: 'Envoyer un audio', sheet_title_media: 'Envoyer un média',
+            meta_notsent: 'Non envoyé', meta_delete: 'Supprimer',
+            toast_msg_failed: 'Message non envoyé', toast_type: 'Ce type de fichier n’est pas accepté ici',
+            toast_upload_failed: 'Échec de l’envoi', toast_upload_conn: 'Échec de l’envoi — vérifiez votre connexion',
+            toast_delete_failed: 'Suppression impossible', toast_rec_unsupported: 'L’enregistrement n’est pas pris en charge sur ce navigateur',
+            toast_mic_denied: 'Accès au microphone refusé',
+            day_today: 'Aujourd’hui', day_yesterday: 'Hier',
+            cam_waiting: 'en attente d’un écran…', cam_connecting: 'connexion…', cam_cannot: 'impossible de démarrer',
+            cam_error: 'Erreur caméra : ', cam_live: (n) => '● en direct · ' + n + ' écran' + (n > 1 ? 's' : '')
+        }
+    };
+    function pickLang() {
+        const prefs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || ''];
+        for (const p of prefs) { const c = String(p).toLowerCase(); if (c.startsWith('fr')) return 'fr'; if (c.startsWith('en')) return 'en'; }
+        return 'en';
+    }
+    const lang = pickLang();
+    const D = Object.assign({}, STR.en, STR[lang] || {});
+    const t = (k) => (D[k] != null ? D[k] : k);
+    document.documentElement.lang = lang;
+
+    // apply translations to static markup tagged with data-i18n / -title / -ph
+    function applyI18n() {
+        document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.getAttribute('data-i18n')); });
+        document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.getAttribute('data-i18n-title')); });
+        document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+    }
+    applyI18n();
+
     // ---- inline icons (stroke, currentColor) ----
     const ICONS = {
         video: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8Z"/>',
@@ -33,6 +106,7 @@
     const timeline = $('timeline');
     let accept = { image: true, video: true, audio: false, text: false, stream: false };
     let allowSelfDelete = false;
+    let welcome = '';            // operator's intro message, shown as an incoming bubble
     let ICE = [];
     let sender = null;
 
@@ -70,6 +144,7 @@
         $('sub').textContent = (info.project || '') + (info.source ? ' · ' + info.source : '');
         accept = info.accept || accept;
         allowSelfDelete = info.allowSelfDelete;
+        welcome = (info.welcome || '').trim();
         ICE = info.ice || [];
         setupComposer();
         if (!nick) showNick(true); else $('nickName').textContent = nick;
@@ -83,7 +158,6 @@
         if (accept.audio) f.push('audio');
         return f;
     }
-    const familyWord = { image: 'photo', video: 'video', audio: 'audio' };
     const familyIcon = { image: 'image', video: 'video', audio: 'mic' };
 
     function setupComposer() {
@@ -105,7 +179,7 @@
             if (single && !accept.text) {
                 attachBtn.classList.add('labeled');
                 $('attachIc').innerHTML = svg(familyIcon[single]);
-                $('attachLabel').textContent = 'Send ' + familyWord[single];
+                $('attachLabel').textContent = t('send_' + single);
             } else {
                 attachBtn.classList.remove('labeled');
                 $('attachIc').innerHTML = svg('image');
@@ -123,9 +197,7 @@
 
         // empty-state hint
         const hint = $('emptyHint');
-        const txt = (!accept.text && !fam.length && accept.stream)
-            ? 'Tap the camera in the top bar to go live on the big screen.'
-            : 'Only you can see what you send here — it appears on the big screen.';
+        const txt = (!accept.text && !fam.length && accept.stream) ? t('empty_stream') : t('empty_default');
         hint.innerHTML = '<span class="lock">🔒</span>' + esc(txt);
 
         updateSend();
@@ -159,16 +231,16 @@
     function buildSheet() {
         const rows = $('sheetRows');
         rows.innerHTML = '';
-        if (accept.image) rows.appendChild(row('cam-photo', 'camera', 'Camera', 'Take a photo', () => $('photoCapture').click()));
-        if (accept.video) rows.appendChild(row('cam-video', 'video', 'Video camera', 'Record a video', () => $('videoCapture').click()));
+        if (accept.image) rows.appendChild(row('cam-photo', 'camera', t('row_camera'), t('row_camera_sub'), () => $('photoCapture').click()));
+        if (accept.video) rows.appendChild(row('cam-video', 'video', t('row_video'), t('row_video_sub'), () => $('videoCapture').click()));
         if (accept.image || accept.video) {
-            const lib = (accept.image && accept.video) ? 'Photo & video library' : (accept.image ? 'Photo library' : 'Video library');
-            rows.appendChild(row('library', 'image', lib, 'Choose from your device', () => $('fileInput').click()));
+            const lib = (accept.image && accept.video) ? t('row_lib_both') : (accept.image ? t('row_lib_photo') : t('row_lib_video'));
+            rows.appendChild(row('library', 'image', lib, t('row_lib_sub'), () => $('fileInput').click()));
         }
-        if (accept.audio) rows.appendChild(row('rec-audio', 'mic', 'Record audio', 'Record a voice message', openRecorder));
-        if (accept.audio) rows.appendChild(row('lib-audio', 'music', 'Audio file', 'Choose an audio file', () => $('audioPick').click()));
+        if (accept.audio) rows.appendChild(row('rec-audio', 'mic', t('row_rec'), t('row_rec_sub'), openRecorder));
+        if (accept.audio) rows.appendChild(row('lib-audio', 'music', t('row_audiofile'), t('row_audiofile_sub'), () => $('audioPick').click()));
         const only = mediaFamilies();
-        $('sheetTitle').textContent = (only.length === 1 && only[0] === 'audio') ? 'Send audio' : 'Send media';
+        $('sheetTitle').textContent = (only.length === 1 && only[0] === 'audio') ? t('sheet_title_audio') : t('sheet_title_media');
     }
 
     // ---- file pickers ----
@@ -189,7 +261,7 @@
         fetch('/api/drop/' + token + '/text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, nick, visitor }) })
             .then(r => r.ok ? r.json() : Promise.reject(r))
             .then(() => { dropPending(p); loadMine(); })
-            .catch(() => { p.state = 'error'; markPending(p); toast('Message not sent'); });
+            .catch(() => { p.state = 'error'; markPending(p); toast(t('toast_msg_failed')); });
     }
 
     // ---- upload files (optimistic + progress) ----
@@ -200,8 +272,8 @@
         files.forEach(uploadOne);
     }
     function guessType(file) {
-        const t = (file.type || '').split('/')[0];
-        if (t === 'image' || t === 'video' || t === 'audio') return t;
+        const mt = (file.type || '').split('/')[0];
+        if (mt === 'image' || mt === 'video' || mt === 'audio') return mt;
         const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
         if (['.mp3', '.m4a', '.aac', '.wav', '.weba', '.oga', '.opus', '.flac'].includes(ext)) return 'audio';
         if (['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv'].includes(ext)) return 'video';
@@ -223,26 +295,24 @@
             if (xhr.status >= 200 && xhr.status < 300) { dropPending(p); loadMine(); }
             else { p.state = 'error'; markPending(p); toast(httpErr(xhr)); }
         };
-        xhr.onerror = () => { p.state = 'error'; markPending(p); toast('Upload failed — check your connection'); };
+        xhr.onerror = () => { p.state = 'error'; markPending(p); toast(t('toast_upload_conn')); };
         xhr.send(fd);
     }
     function httpErr(xhr) {
-        if (xhr.status === 415) return 'That file type isn’t accepted here';
-        try { const j = JSON.parse(xhr.responseText); if (j && j.error) return j.error; } catch (e) {}
-        return 'Upload failed';
+        return xhr.status === 415 ? t('toast_type') : t('toast_upload_failed');
     }
     function dropPending(p) { pending = pending.filter(x => x !== p); if (p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} } }
     function markPending(p) {
         const el = timeline.querySelector('[data-pid="' + p.id + '"]');
         if (!el) { render(); return; }
         el.classList.add('error'); el.classList.remove('sending');
-        const meta = el.querySelector('.msg-meta span'); if (meta) meta.textContent = 'Not sent';
+        const meta = el.querySelector('.msg-meta span'); if (meta) meta.textContent = t('meta_notsent');
         const ov = el.querySelector('.sending'); if (ov) ov.remove();
     }
 
     function removeMsg(fileId) {
         fetch('/api/drop/' + token + '/' + fileId + '?visitor=' + encodeURIComponent(visitor), { method: 'DELETE' })
-            .then(r => r.ok ? r.json() : Promise.reject()).then(loadMine).catch(() => toast('Could not delete'));
+            .then(r => r.ok ? r.json() : Promise.reject()).then(loadMine).catch(() => toast(t('toast_delete_failed')));
     }
 
     // ---- timeline ----
@@ -256,24 +326,36 @@
     function dayLabel(ms) {
         const d = new Date(ms), now = new Date();
         const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-        if (sameDay(d, now)) return 'Today';
+        if (sameDay(d, now)) return t('day_today');
         const y = new Date(now); y.setDate(now.getDate() - 1);
-        if (sameDay(d, y)) return 'Yesterday';
-        try { return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }); } catch (e) { return d.toDateString(); }
+        if (sameDay(d, y)) return t('day_yesterday');
+        try { return d.toLocaleDateString(lang, { weekday: 'short', day: 'numeric', month: 'short' }); } catch (e) { return d.toDateString(); }
     }
 
     function render() {
         const items = serverItems.slice().sort((a, b) => a.time - b.time)
             .concat(pending.map(p => Object.assign({ pending: true }, p)));
         timeline.querySelectorAll('.msg, .day-sep').forEach(n => n.remove());
+        if (welcome) timeline.appendChild(welcomeBubble(welcome));   // pinned intro at the top
         let lastDay = '';
         items.forEach(u => {
             const dl = dayLabel(u.time);
             if (dl !== lastDay) { lastDay = dl; const sep = document.createElement('div'); sep.className = 'day-sep'; sep.textContent = dl; timeline.appendChild(sep); }
             timeline.appendChild(bubble(u));
         });
-        $('emptyHint').classList.toggle('hidden', items.length > 0);
+        // the welcome message already gives instructions, so suppress the generic empty hint when it's set
+        $('emptyHint').classList.toggle('hidden', items.length > 0 || !!welcome);
         timeline.scrollTop = timeline.scrollHeight;
+    }
+
+    // operator's welcome message: an incoming (left-aligned) text bubble, no time/tick/delete
+    function welcomeBubble(text) {
+        const wrap = document.createElement('div');
+        wrap.className = 'msg them text welcome';
+        const body = document.createElement('div'); body.className = 'msg-body text';
+        body.textContent = text;
+        wrap.appendChild(body);
+        return wrap;
     }
 
     function bubble(u) {
@@ -288,7 +370,7 @@
         else if (u.type === 'text') {
             body.classList.add('text');
             if (u.pending) body.textContent = u.text;
-            else { body.textContent = '…'; fetch(u.url).then(r => r.text()).then(t => { body.textContent = t; }).catch(() => { body.textContent = '(text)'; }); }
+            else { body.textContent = '…'; fetch(u.url).then(r => r.text()).then(txt => { body.textContent = txt; }).catch(() => { body.textContent = '(text)'; }); }
         }
         else { body.classList.add('text'); body.textContent = u.name || '(file)'; }
 
@@ -297,14 +379,14 @@
         wrap.appendChild(body);
 
         const meta = document.createElement('div'); meta.className = 'msg-meta';
-        const tm = document.createElement('span'); tm.textContent = u.state === 'error' ? 'Not sent' : fmtTime(u.time); meta.appendChild(tm);
+        const tm = document.createElement('span'); tm.textContent = u.state === 'error' ? t('meta_notsent') : fmtTime(u.time); meta.appendChild(tm);
         if (!u.pending) { const tick = document.createElement('span'); tick.className = 'tick'; tick.innerHTML = svg('check'); meta.appendChild(tick); }
-        if (!u.pending && allowSelfDelete) { const del = document.createElement('button'); del.className = 'msg-del'; del.textContent = 'Delete'; del.onclick = () => removeMsg(u.fileId); meta.appendChild(del); }
+        if (!u.pending && allowSelfDelete) { const del = document.createElement('button'); del.className = 'msg-del'; del.textContent = t('meta_delete'); del.onclick = () => removeMsg(u.fileId); meta.appendChild(del); }
         wrap.appendChild(meta);
         return wrap;
     }
 
-    function fmtTime(ms) { try { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
+    function fmtTime(ms) { try { return new Date(ms).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
 
     // ---- audio recorder (MediaRecorder) ----
     let mediaRec = null, recChunks = [], recStream = null, recBlob = null, recMime = '', recTimer = null, recStart = 0;
@@ -326,14 +408,14 @@
         const pv = $('recPreview'); pv.classList.add('hidden'); pv.pause && pv.pause(); pv.removeAttribute('src');
         $('recRetake').classList.add('hidden'); $('recSend').classList.add('hidden');
         const tog = $('recToggle'); tog.classList.remove('hidden'); tog.innerHTML = svg('mic');
-        $('recHint').textContent = 'Tap the mic to start';
+        $('recHint').textContent = t('rec_start');
         $('recTime').textContent = '0:00';
     }
     $('recToggle').onclick = () => { if (mediaRec && mediaRec.state === 'recording') stopRec(); else startRec(); };
     async function startRec() {
-        if (!window.MediaRecorder) { toast('Recording isn’t supported on this browser'); return; }
+        if (!window.MediaRecorder) { toast(t('toast_rec_unsupported')); return; }
         try { recStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-        catch (e) { toast('Microphone permission denied'); return; }
+        catch (e) { toast(t('toast_mic_denied')); return; }
         recMime = pickAudioMime();
         try { mediaRec = recMime ? new MediaRecorder(recStream, { mimeType: recMime }) : new MediaRecorder(recStream); }
         catch (e) { mediaRec = new MediaRecorder(recStream); }
@@ -344,7 +426,7 @@
         recStart = Date.now();
         $('recOverlay').classList.add('recording');
         $('recToggle').innerHTML = svg('stop');
-        $('recHint').textContent = 'Recording… tap to stop';
+        $('recHint').textContent = t('rec_recording');
         recTimer = setInterval(tickRec, 200);
     }
     function tickRec() {
@@ -365,7 +447,7 @@
         $('recToggle').classList.add('hidden');
         $('recRetake').classList.remove('hidden');
         $('recSend').classList.remove('hidden');
-        $('recHint').textContent = 'Listen back, then send';
+        $('recHint').textContent = t('rec_listen');
     }
     $('recRetake').onclick = resetRecorder;
     $('recSend').onclick = () => {
@@ -387,17 +469,18 @@
     // ---- toast ----
     let toastTimer = null;
     function toast(msg) {
-        const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+        const el = $('toast'); el.textContent = msg; el.classList.remove('hidden');
         if (toastTimer) clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => t.classList.add('hidden'), 2600);
+        toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
     }
 
     // ---- live camera ----
     function startCamera() {
         $('camOverlay').classList.remove('hidden');
         const status = $('camStatus');
-        sender = new CameraSender({ token, ice: ICE, getNick: () => nick || 'anon', preview: $('camPreview'), onStatus: s => { status.textContent = s; } });
-        sender.start().catch(e => { status.textContent = 'Camera error: ' + (e.message || e); });
+        const labels = { waiting: t('cam_waiting'), connecting: t('cam_connecting'), cannotStart: t('cam_cannot'), live: D.cam_live };
+        sender = new CameraSender({ token, ice: ICE, getNick: () => nick || 'anon', preview: $('camPreview'), onStatus: s => { status.textContent = s; }, labels });
+        sender.start().catch(e => { status.textContent = t('cam_error') + (e.message || e); });
         $('camFlip').onclick = () => sender && sender.flip().catch(() => {});
         $('camStop').onclick = stopCamera;
     }
