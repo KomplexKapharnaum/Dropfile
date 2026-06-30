@@ -133,6 +133,7 @@
                                     <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(project(),s)" title="Accept all">All</button>
                                     <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(project(),s,'image')" title="Images" x-html="icon('image')"></button>
                                     <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(project(),s,'video')" title="Videos" x-html="icon('video')"></button>
+                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.audio}" @click="toggleAccept(project(),s,'audio')" title="Audio" x-html="icon('audio')"></button>
                                     <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(project(),s,'text')" title="Text" x-html="icon('text')"></button>
                                     <button class="iconbtn tchip" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(project(),s,'stream')" title="Camera stream" x-html="icon('stream')"></button>
                                     <select class="streammode" x-show="s.accept && s.accept.stream" @change="setStreamMode(project(),s,$event.target.value)" title="When multiple streamers join">
@@ -263,6 +264,7 @@
                                 <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
                                 <img :src="f.thumb" loading="lazy" alt="">
                                 <span class="vbadge" x-show="f.type==='video'">▶</span>
+                                <span class="vbadge" x-show="f.type==='audio'">♪</span>
                                 <span class="vbadge" x-show="f.type==='text'">T</span>
                             </div>
                         </template>
@@ -399,6 +401,7 @@
             <template x-if="lightbox.open && lbCurrent() && lbCurrent().type==='image'"><img :src="lbCurrent().url" alt=""></template>
             <template x-if="lightbox.open && lbCurrent() && lbCurrent().type==='video'"><video :src="lbCurrent().url" controls autoplay loop></video></template>
             <template x-if="lightbox.open && lbCurrent() && lbCurrent().type==='text'"><iframe class="lb-text" :src="lbCurrent().url" sandbox=""></iframe></template>
+            <template x-if="lightbox.open && lbCurrent() && lbCurrent().type==='audio'"><audio class="lb-audio" :src="lbCurrent().url" controls autoplay></audio></template>
         </div>
         <button class="iconbtn lb-nav" @click.stop="lbNext()" x-html="icon('right')"></button>
         <button class="iconbtn lb-close" @click.stop="lbClose()" x-html="icon('close')"></button>

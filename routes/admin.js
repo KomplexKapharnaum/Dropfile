@@ -52,8 +52,8 @@ module.exports = function (ctx) {
     function sceneCount(p, s) {
         try { return listMedia(model.sourceDir(UPLOAD_PATH, p, s)).length; } catch (e) { return 0; }
     }
-    function defaultAccept() { return { image: true, video: true, text: false, stream: false }; }
-    function cleanAccept(a) { return { image: !!a.image, video: !!a.video, text: !!a.text, stream: !!a.stream }; }
+    function defaultAccept() { return { image: true, video: true, audio: false, text: false, stream: false }; }
+    function cleanAccept(a) { return { image: !!a.image, video: !!a.video, audio: !!a.audio, text: !!a.text, stream: !!a.stream }; }
 
     function makeScene(p, name, accept) {
         const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));

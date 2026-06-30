@@ -23,6 +23,8 @@
     img.crossOrigin = 'anonymous';
     const video = document.createElement('video');
     video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous';
+    const audioEl = new Audio();            // dropped voice notes / music clips (unmuted)
+    audioEl.crossOrigin = 'anonymous';
 
     let settings = defaultSettings();
     let active = null;          // active scene info (incl. stream flag/mode)
@@ -176,6 +178,7 @@
         paused = true;
         clearTimers();
         if (current && current.type === 'video') video.pause();
+        else if (current && current.type === 'audio') audioEl.pause();
         emitStatus();
     }
     function play() {
@@ -183,6 +186,7 @@
         paused = false;
         if (!current) { start(); return; }
         if (current.type === 'video') { const p = video.play(); if (p && p.catch) p.catch(() => {}); }
+        else if (current.type === 'audio') { const p = audioEl.play(); if (p && p.catch) p.catch(() => {}); }
         else scheduleNext();
         emitStatus();
     }
@@ -217,8 +221,11 @@
 
     function setBlackout(on) {
         blackedOut = on;
-        if (on) { clearTimers(); clearCanvas(); }
-        else if (!streaming && current) redraw();
+        if (on) { clearTimers(); clearCanvas(); if (current && current.type === 'audio') audioEl.pause(); }
+        else if (!streaming && current) {
+            redraw();
+            if (current.type === 'audio' && !paused) { const p = audioEl.play(); if (p && p.catch) p.catch(() => {}); }
+        }
         emitStatus();
     }
 
@@ -286,7 +293,7 @@
         const action = { type: 'media', name: m.name };
         const k = keyForAction(action);
         if (m.type === 'image') { const img = document.createElement('img'); img.src = m.url; div.appendChild(img); }
-        else { const ph = document.createElement('div'); ph.className = 'ml-ph'; ph.textContent = m.type === 'text' ? 'T' : '▶'; div.appendChild(ph); }
+        else { const ph = document.createElement('div'); ph.className = 'ml-ph'; ph.textContent = m.type === 'text' ? 'T' : m.type === 'audio' ? '♪' : '▶'; div.appendChild(ph); }
         const key = document.createElement('span'); key.className = 'ml-key'; key.textContent = k ? midiKeyLabel(k) : 'tap to learn';
         div.appendChild(key);
         div.onclick = () => arm(action, key);
@@ -308,6 +315,7 @@
         updateCounter();
         emitStatus();
         stopRaf();
+        stopAudio();
         video.onended = null;
 
         if (item.type === 'image') {
@@ -320,6 +328,17 @@
             fetch(item.url).then(r => r.text())
                 .then(t => { textContent = String(t || '').slice(0, 1500); redraw(); scheduleNext(); })
                 .catch(() => { textContent = ''; redraw(); scheduleNext(); });
+        } else if (item.type === 'audio') {
+            // play the clip and paint a "now playing" card; advance on end (diaporama)
+            redraw();
+            audioEl.loop = (settings.playMode === 'manual');
+            audioEl.onended = () => { if (current === item && settings.playMode !== 'manual') next(); };
+            audioEl.onerror = () => { if (current === item && settings.playMode !== 'manual') next(); };
+            audioEl.src = item.url;
+            audioEl.currentTime = 0;
+            const p = audioEl.play();
+            if (p && p.catch) p.catch(() => {});
+            if (paused || blackedOut) audioEl.pause();
         } else {
             video.onloadeddata = () => startRaf();
             // a manually-selected clip loops itself; in diaporama it advances on end
@@ -339,6 +358,7 @@
     }
     function clearTimers() { if (timer) { clearTimeout(timer); timer = null; } }
     function stopRaf() { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
+    function stopAudio() { audioEl.onended = null; audioEl.onerror = null; try { audioEl.pause(); } catch (e) {} }
     function startRaf() { if (streaming) return; stopRaf(); const loop = () => { redraw(); rafId = requestAnimationFrame(loop); }; loop(); }
 
     // ---- compositor ----
@@ -406,6 +426,7 @@
         clearCanvas();
         if (blackedOut) return;
         if (current && current.type === 'text') { drawText(); return; }
+        if (current && current.type === 'audio') { drawAudioCard(); return; }
         const m = mediaIntrinsic();
         if (!m) return;
         const sc = settings.scaler;
@@ -440,6 +461,44 @@
         if (rot) ctx.rotate(rot * Math.PI / 180);
         drawWrappedText((textContent || '').trim(), boxW, boxH);
         ctx.restore();
+    }
+
+    // draw a "now playing" card for an audio clip (same transform setup as text),
+    // since audio has no picture — a waveform glyph + the sender's name.
+    function drawAudioCard() {
+        const sc = settings.scaler;
+        const C = container();
+        ctx.save();
+        ctx.scale(canvas.width / C.w, canvas.height / C.h);
+        const rot = ((sc.rotation % 360) + 360) % 360;
+        const swap = (rot === 90 || rot === 270);
+        const boxW = swap ? C.h : C.w, boxH = swap ? C.w : C.h;
+        ctx.translate(C.w / 2, C.h / 2);
+        if (rot) ctx.rotate(rot * Math.PI / 180);
+        const bars = [0.35, 0.6, 0.85, 0.5, 1, 0.7, 0.4, 0.65, 0.9, 0.55, 0.3, 0.7, 0.45];
+        const span = Math.min(boxW * 0.7, 560);
+        const bw = span / (bars.length * 2);
+        const maxH = Math.min(boxH * 0.34, 200);
+        ctx.fillStyle = '#7cc4ff';
+        bars.forEach((v, i) => {
+            const h = Math.max(6, v * maxH);
+            ctx.fillRect(-span / 2 + i * bw * 2, -h / 2, bw, h);
+        });
+        const label = audioLabel();
+        ctx.fillStyle = '#cdd6e4';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const fsz = Math.max(16, Math.min(Math.round(boxH * 0.09), 64));
+        ctx.font = `600 ${fsz}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+        ctx.fillText('♪ ' + label, 0, maxH / 2 + fsz * 1.6);
+        ctx.restore();
+    }
+
+    // sender label from the on-disk filename ("<nick>_<ts>_<id>.<ext>")
+    function audioLabel() {
+        const n = (current && current.name) || '';
+        const nick = n.split('_')[0];
+        return (nick && /[a-zA-Z0-9]/.test(nick)) ? nick : 'Audio';
     }
 
     function wrapText(text, maxW, fontSpec) {
@@ -492,6 +551,7 @@
             streaming = true;
             clearTimers(); stopRaf();
             try { video.pause(); } catch (e) {}    // freeze any background video so it can't draw/sound under the stream
+            stopAudio();                            // silence any playlist audio clip under the live stream
             startStreamRaf();
             setStatus('');
         } else if (!has && streaming) {

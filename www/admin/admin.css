@@ -181,6 +181,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .lb-stage { display: flex; align-items: center; justify-content: center; max-width: 86vw; max-height: 88vh; }
 .lb-stage img, .lb-stage video { max-width: 86vw; max-height: 88vh; object-fit: contain; border-radius: 4px; }
 .lb-text { width: min(700px, 86vw); height: 88vh; background: #fff; color: #111; border: none; border-radius: 4px; }
+.lb-audio { width: min(520px, 86vw); }
 .lb-nav { color: #fff; background: rgba(255,255,255,.08); border-radius: 50%; padding: 12px; border: none; }
 .lb-nav .ic { width: 26px; height: 26px; }
 .lb-close { position: fixed; top: 16px; right: 16px; color: #fff; background: rgba(255,255,255,.08); border: none; border-radius: 50%; padding: 10px; }

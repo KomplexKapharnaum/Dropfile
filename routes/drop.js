@@ -50,7 +50,7 @@ module.exports = function (ctx) {
             source: req.dropSource.name,
             sceneId: req.dropSource.id,
             allowSelfDelete: !!req.dropSource.allowSelfDelete,
-            accept: req.dropSource.accept || { image: true, video: true, text: false, stream: false },
+            accept: req.dropSource.accept || { image: true, video: true, audio: false, text: false, stream: false },
             ice: turn.iceServers()
         });
     });
@@ -60,7 +60,7 @@ module.exports = function (ctx) {
         if (!req.file) return res.status(400).json({ error: 'no file' });
         const filename = req.file.filename;
         const type = mediaType(filename);
-        const accept = req.dropSource.accept || { image: true, video: true, text: false };
+        const accept = req.dropSource.accept || { image: true, video: true, audio: false, text: false };
         if (!type || !accept[type]) {
             try { fs.unlinkSync(req.file.path); } catch (e) {}
             return res.status(415).json({ error: 'file type not allowed here' });

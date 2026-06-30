@@ -10,31 +10,72 @@
 </head>
 <body>
     <header class="chat-head">
+        <div class="avatar">KX</div>
         <div class="titles">
             <div class="ch-title">KXKM</div>
             <div id="sub" class="ch-sub"></div>
         </div>
-        <button id="nickBtn" class="nick">👤 <span id="nickName">…</span> ✎</button>
+        <button id="liveBtn" class="hbtn live hidden" title="Go live with your camera"></button>
+        <button id="nickBtn" class="hbtn nick" title="Your name"><span class="nick-ic"></span><span id="nickName">…</span></button>
     </header>
 
-    <div id="timeline" class="timeline"></div>
+    <div id="timeline" class="timeline">
+        <div id="emptyHint" class="empty-hint hidden"></div>
+    </div>
 
     <form id="composer" class="composer">
-        <button type="button" id="attachBtn" class="cbtn icon" title="Send photo / video">＋</button>
-        <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
-        <input type="text" id="textInput" class="ctext" placeholder="Message…" autocomplete="off">
-        <button type="button" id="liveBtn" class="cbtn live icon hidden" title="Go live">●</button>
-        <button type="submit" id="sendBtn" class="cbtn send">Send</button>
+        <button type="button" id="attachBtn" class="cbtn attach" title="Add media"><span id="attachIc" class="attach-ic"></span><span id="attachLabel" class="attach-label"></span></button>
+        <input type="text" id="textInput" class="ctext" placeholder="Message…" autocomplete="off" enterkeyhint="send">
+        <button type="submit" id="sendBtn" class="cbtn send" title="Send"></button>
     </form>
 
+    <!-- hidden pickers: native OS camera / library -->
+    <input type="file" id="fileInput" multiple hidden>
+    <input type="file" id="photoCapture" accept="image/*" capture="environment" hidden>
+    <input type="file" id="videoCapture" accept="video/*" capture="environment" hidden>
+    <input type="file" id="audioPick" accept="audio/*" hidden>
+
+    <!-- attachment action sheet -->
+    <div id="sheet" class="sheet hidden">
+        <div class="sheet-back" id="sheetBack"></div>
+        <div class="sheet-panel" role="menu">
+            <div class="sheet-grip"></div>
+            <div id="sheetTitle" class="sheet-title">Send</div>
+            <div id="sheetRows" class="sheet-rows"></div>
+            <button type="button" id="sheetCancel" class="sheet-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- nickname modal -->
     <div id="nickModal" class="nick-modal hidden">
         <div class="nm-box">
             <h3>Your name</h3>
+            <p class="nm-hint">Shown on the screen with what you send.</p>
             <input id="nickField" type="text" maxlength="20" placeholder="e.g. Alex" autocomplete="off">
             <button id="nickSave" class="primary">OK</button>
         </div>
     </div>
 
+    <!-- audio recorder -->
+    <div id="recOverlay" class="rec-overlay hidden">
+        <div class="rec-card">
+            <button type="button" id="recClose" class="rec-close" title="Close"></button>
+            <div class="rec-title">Voice message</div>
+            <div id="recTime" class="rec-time">0:00</div>
+            <div class="rec-stage">
+                <span class="rec-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
+            <audio id="recPreview" class="rec-preview hidden" controls playsinline></audio>
+            <div id="recHint" class="rec-hint">Tap the mic to start</div>
+            <div class="rec-controls">
+                <button type="button" id="recRetake" class="rec-btn ghost hidden">Retake</button>
+                <button type="button" id="recToggle" class="rec-btn record" title="Record"></button>
+                <button type="button" id="recSend" class="rec-btn primary hidden">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- live camera overlay -->
     <div id="camOverlay" class="cam-overlay hidden">
         <video id="camPreview" autoplay muted playsinline></video>
         <div class="cam-top">
@@ -46,6 +87,8 @@
             <button id="camStop" class="stop">■ Stop</button>
         </div>
     </div>
+
+    <div id="toast" class="toast hidden"></div>
 
     <script src="/drop.js"></script>
 </body>
