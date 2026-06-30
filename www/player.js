@@ -13,6 +13,7 @@
 (function () {
     const token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
 
+    const stage = document.getElementById('stage');
     const canvas = document.getElementById('surface');
     const ctx = canvas.getContext('2d');
     const statusEl = document.getElementById('status');
@@ -622,13 +623,22 @@
         else { counter.classList.remove('fresh'); counter.textContent = queue.length ? (index + 1) + ' / ' + queue.length : ''; }
     }
 
+    function toggleFullscreen() {
+        if (document.fullscreenElement) document.exitFullscreen?.();
+        else document.documentElement.requestFullscreen?.();
+    }
+    function advance() { if (streaming) updateAudio(); else next(); }
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
         else if (e.key === 'ArrowLeft') { prev(); }
-        else if (e.key === 'f') { document.documentElement.requestFullscreen?.(); }
+        else if (e.key === 'f') { toggleFullscreen(); }
         else if (e.key === 'm') { toggleLearn(); }
     });
-    canvas.addEventListener('click', () => { if (streaming) updateAudio(); else next(); });
+    // Right-click advances media (next / live audio refresh); double-click toggles
+    // browser fullscreen. Suppress the native context menu so right-click is usable.
+    stage.addEventListener('contextmenu', (e) => { e.preventDefault(); advance(); });
+    stage.addEventListener('dblclick', () => toggleFullscreen());
     window.addEventListener('resize', layout);
 
     layout();
