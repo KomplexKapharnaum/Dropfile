@@ -60,6 +60,28 @@ module.exports = function (ctx) {
     function cleanAccept(a) { return { image: !!a.image, video: !!a.video, audio: !!a.audio, text: !!a.text, stream: !!a.stream }; }
     // text-input character cap for the drop page: default 140, 0 = unlimited
     function cleanMaxChars(v) { const n = Math.floor(Number(v)); return (Number.isFinite(n) && n >= 0) ? n : 140; }
+    // menu-button label on the project drop home: trimmed, capped. '' = scene hidden from the home menu.
+    function cleanButtonLabel(v) { return String(v == null ? '' : v).trim().slice(0, 40); }
+    // scripted auto-answers: one reply per line, blanks dropped, capped (40 lines / 2000 chars)
+    function cleanAutoReplies(v) {
+        return String(v == null ? '' : v)
+            .replace(/\r\n?/g, '\n').split('\n').map(l => l.trim()).filter(Boolean)
+            .slice(0, 40).join('\n').slice(0, 2000);
+    }
+
+    // public "drop meta" for a scene — the subset the audience drop page reads
+    // (matches routes/drop.js GET /api/drop/:token, minus ICE). Pushed live to
+    // open drop pages when the operator edits these fields.
+    function dropMetaFor(s) {
+        return {
+            accept: s.accept ? cleanAccept(s.accept) : defaultAccept(),
+            welcome: s.welcome || '',
+            autoReplies: model.autoReplyLines(s),
+            maxChars: cleanMaxChars(s.maxChars),
+            allowSelfDelete: !!s.allowSelfDelete
+        };
+    }
+    function pushDropMeta(s) { io.to('drop:' + s.id).emit('drop-meta', dropMetaFor(s)); }
 
     function makeScene(p, name, accept) {
         const folder = ids.uniqueSlug(ids.slugify(name), Object.values(p.sources || {}).map(s => s.folder).filter(Boolean));
@@ -68,8 +90,8 @@ module.exports = function (ctx) {
             id: sid, name, folder,
             dropToken: ids.token(), allowSelfDelete: true, order: [],
             accept: accept ? cleanAccept(accept) : defaultAccept(),
-            welcome: '', streamMode: 'replace', maxChars: 140,
-            relayText: false, relayImage: false, createdAt: Date.now()
+            welcome: '', autoReplies: '', streamMode: 'replace', maxChars: 140,
+            relayText: false, relayImage: false, buttonLabel: '', createdAt: Date.now()
         };
         p.sources = p.sources || {};
         p.sources[sid] = scene;
@@ -86,9 +108,11 @@ module.exports = function (ctx) {
             allowSelfDelete: !!s.allowSelfDelete,
             accept: s.accept ? cleanAccept(s.accept) : defaultAccept(),
             welcome: s.welcome || '',
+            autoReplies: s.autoReplies || '',
             streamMode: s.streamMode === 'grid' ? 'grid' : 'replace',
             maxChars: cleanMaxChars(s.maxChars),
             relayText: !!s.relayText, relayImage: !!s.relayImage,
+            buttonLabel: cleanButtonLabel(s.buttonLabel),
             count: sceneCount(p, s)
         };
     }
@@ -145,6 +169,7 @@ module.exports = function (ctx) {
         const scenes = orderedScenes(p).map(s => serializeScene(p, s));
         return {
             id: p.id, name: p.name, slug: p.slug, createdAt: p.createdAt,
+            homeToken: p.homeToken, homeWelcome: p.homeWelcome || '',
             sources: scenes,
             sceneCount: scenes.length,
             mediaCount: scenes.reduce((n, s) => n + s.count, 0),
@@ -249,7 +274,7 @@ module.exports = function (ctx) {
         if (!name) return res.status(400).json({ error: 'name required' });
         const slug = ids.uniqueSlug(ids.slugify(name), Object.values(store.data.projects).map(p => p.slug));
         const id = ids.id();
-        const project = { id, name, slug, createdAt: Date.now(), sources: {}, sceneOrder: [], console: { map: {} }, stations: {}, stationOrder: [] };
+        const project = { id, name, slug, createdAt: Date.now(), homeToken: ids.token(), homeWelcome: '', sources: {}, sceneOrder: [], console: { map: {} }, stations: {}, stationOrder: [] };
         store.data.projects[id] = project;
         try { fs.mkdirSync(path.join(UPLOAD_PATH, slug), { recursive: true }); } catch (e) {}
         makeScene(project, 'Drop');
@@ -261,6 +286,7 @@ module.exports = function (ctx) {
         const p = store.data.projects[req.params.id];
         if (!p) return res.status(404).json({ error: 'not found' });
         if (req.body.name) p.name = String(req.body.name).trim();
+        if (typeof req.body.homeWelcome === 'string') p.homeWelcome = req.body.homeWelcome.slice(0, 500);
         store.save();
         res.json({ project: serializeProject(p) });
     });
@@ -302,13 +328,16 @@ module.exports = function (ctx) {
         if (req.body.name) s.name = String(req.body.name).trim();
         if (typeof req.body.allowSelfDelete === 'boolean') s.allowSelfDelete = req.body.allowSelfDelete;
         if (typeof req.body.welcome === 'string') s.welcome = req.body.welcome.slice(0, 500);
+        if (typeof req.body.autoReplies === 'string') s.autoReplies = cleanAutoReplies(req.body.autoReplies);
         if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
         if (req.body.streamMode === 'replace' || req.body.streamMode === 'grid') s.streamMode = req.body.streamMode;
         if (req.body.maxChars !== undefined) s.maxChars = cleanMaxChars(req.body.maxChars);
         if (typeof req.body.relayText === 'boolean') s.relayText = req.body.relayText;
         if (typeof req.body.relayImage === 'boolean') s.relayImage = req.body.relayImage;
+        if (typeof req.body.buttonLabel === 'string') s.buttonLabel = cleanButtonLabel(req.body.buttonLabel);
         store.save();
         refreshSceneMachines(s.id); // push new accept/streamMode to players already showing this scene
+        pushDropMeta(s);            // live-update open audience drop pages (intro / auto-answers / accept …)
         res.json({ project: serializeProject(req._project) });
     });
 

@@ -109,14 +109,36 @@
                     <button class="iconbtn" title="Back" @click="goProjects()" x-html="icon('back')"></button>
                     <h1 x-text="project().name"></h1>
                     <button class="iconbtn" title="Rename" @click="renameProject(project())" x-html="icon('pencil')"></button>
+                    <button class="iconbtn" title="Drop home — QR / link to the scene menu" @click="openShare(homeUrl(project()), project().name)" x-html="icon('qr')"></button>
                     <span class="spacer"></span>
                     <button class="iconbtn danger" title="Delete project" @click="deleteProject(project())" x-html="icon('trash')"></button>
+                </div>
+
+                <nav class="ws-tabs">
+                    <button :class="{active: wsTab==='scenes'}" @click="wsTab='scenes'"><span x-html="icon('image')"></span> Scenes &amp; media</button>
+                    <button :class="{active: wsTab==='control'}" @click="wsTab='control'"><span x-html="icon('monitor')"></span> Live control</button>
+                    <button :class="{active: wsTab==='sequencer'}" @click="wsTab='sequencer'"><span x-html="icon('sliders')"></span> Sequencer</button>
+                </nav>
+
+                <!-- ===== TAB: Scenes & media ===== -->
+                <div class="ws-tab" x-show="wsTab==='scenes'" x-cloak>
+
+                <div class="ws-home">
+                    <div class="sc-section-lbl">Drop home</div>
+                    <div class="sc-fields">
+                        <label class="sc-field">
+                            <span class="sc-flabel">Intro</span>
+                            <textarea rows="2" maxlength="500" x-model="project().homeWelcome" @change="saveHomeWelcome(project())"
+                                placeholder="Shown above the scene menu on the project drop home (e.g. “Pick a moment below and send us your photos!”)."></textarea>
+                        </label>
+                    </div>
+                    <p class="muted hint">Share the drop home (QR button above) to let people pick a scene. Only scenes with a <b>Title</b> are listed.</p>
                 </div>
 
                 <!-- SCENES & MEDIA -->
                 <section class="ws-scenes">
                     <div class="page-head">
-                        <h2>Scenes &amp; media</h2>
+                        <span class="spacer"></span>
                         <button @click="addScene(project())"><span x-html="icon('plus')"></span> Scene</button>
                     </div>
                     <div class="scenes" :data-scenes="project().id">
@@ -124,41 +146,72 @@
                             <div class="scene-card" :class="{dragging: isSceneDragging(project(),s)}" :data-sid="s.id" @dragover.prevent="sceneDragOver(project(),idx)" @drop.prevent>
                                 <div class="sc-top">
                                     <span class="sidx" draggable="true" title="Drag to reorder" @dragstart="sceneDragStart(project(),idx,$event)" @dragend="sceneDragEnd(project())" x-text="pad(idx+1)"></span>
-                                    <strong class="scene-name" x-text="s.name"></strong>
                                     <button class="iconbtn" title="Rename scene" @click="renameScene(project(),s)" x-html="icon('pencil')"></button>
-                                    <button class="iconbtn" :class="{on: s.welcome}" title="Welcome message — instructions shown to uploaders" @click="toggleWelcome(s)" x-html="icon('message')"></button>
-                                    <span class="spacer"></span>
-                                    <button class="iconbtn" title="Share" @click="openShare(dropUrl(s), project().name + ' / ' + s.name)" x-html="icon('share')"></button>
+                                    <strong class="scene-name" x-text="s.name"></strong>
+                                    <button class="iconbtn" title="Share drop link / QR" @click="openShare(dropUrl(s), project().name + ' / ' + s.name)" x-html="icon('qr')"></button>
                                     <button class="iconbtn danger" title="Delete scene" @click="deleteScene(project(),s)" x-html="icon('trash')"></button>
                                 </div>
-                                <div class="sc-types">
-                                    <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(project(),s)" title="Accept all">All</button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(project(),s,'image')" title="Images" x-html="icon('image')"></button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(project(),s,'video')" title="Videos" x-html="icon('video')"></button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.audio}" @click="toggleAccept(project(),s,'audio')" title="Audio" x-html="icon('audio')"></button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(project(),s,'text')" title="Text" x-html="icon('text')"></button>
-                                    <button class="iconbtn tchip" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(project(),s,'stream')" title="Camera stream" x-html="icon('stream')"></button>
-                                    <select class="streammode" x-show="s.accept && s.accept.stream" @change="setStreamMode(project(),s,$event.target.value)" title="When multiple streamers join">
-                                        <option value="replace" :selected="s.streamMode!=='grid'">single</option>
-                                        <option value="grid" :selected="s.streamMode==='grid'">grid</option>
-                                    </select>
+
+                                <!-- what people are allowed to send here — one row per media type,
+                                     with that type's own options inline on its row -->
+                                <div class="sc-section">
+                                    <div class="sc-section-head">
+                                        <span class="sc-section-lbl">Accepts</span>
+                                        <button class="tchip" :class="{on: acceptAll(s)}" @click="setAcceptAll(project(),s)" title="Accept every media type">All</button>
+                                    </div>
+                                    <div class="sc-accept">
+                                        <div class="sc-arow">
+                                            <button class="sc-toggle" :class="{on: s.accept && s.accept.image}" @click="toggleAccept(project(),s,'image')"><span class="sc-tico" x-html="icon('image')"></span><span>Images</span></button>
+                                            <span class="spacer"></span>
+                                            <button class="tchip relaychip" x-show="s.accept && s.accept.image" x-cloak :class="{on: s.relayImage}" @click="toggleRelay(project(),s,'image')" title="Forward incoming images to the KXKM relay (relay.kxkm.net)"><span x-html="icon('relay')"></span> relay</button>
+                                        </div>
+                                        <div class="sc-arow">
+                                            <button class="sc-toggle" :class="{on: s.accept && s.accept.video}" @click="toggleAccept(project(),s,'video')"><span class="sc-tico" x-html="icon('video')"></span><span>Videos</span></button>
+                                        </div>
+                                        <div class="sc-arow">
+                                            <button class="sc-toggle" :class="{on: s.accept && s.accept.audio}" @click="toggleAccept(project(),s,'audio')"><span class="sc-tico" x-html="icon('audio')"></span><span>Audio</span></button>
+                                        </div>
+                                        <div class="sc-arow">
+                                            <button class="sc-toggle" :class="{on: s.accept && s.accept.text}" @click="toggleAccept(project(),s,'text')"><span class="sc-tico" x-html="icon('text')"></span><span>Text</span></button>
+                                            <label class="sc-limit" x-show="s.accept && s.accept.text" x-cloak title="Max characters per message — 0 = unlimited">max <input type="number" min="0" step="1" x-model.number="s.maxChars" @change="saveMaxChars(project(),s)"> chars</label>
+                                            <span class="spacer"></span>
+                                            <button class="tchip relaychip" x-show="s.accept && s.accept.text" x-cloak :class="{on: s.relayText}" @click="toggleRelay(project(),s,'text')" title="Forward incoming text to the KXKM relay (relay.kxkm.net)"><span x-html="icon('relay')"></span> relay</button>
+                                        </div>
+                                        <div class="sc-arow">
+                                            <button class="sc-toggle" :class="{on: s.accept && s.accept.stream}" @click="toggleAccept(project(),s,'stream')"><span class="sc-tico" x-html="icon('stream')"></span><span>Stream</span></button>
+                                            <span class="spacer"></span>
+                                            <select class="streammode" x-show="s.accept && s.accept.stream" x-cloak @change="setStreamMode(project(),s,$event.target.value)" title="When several people go live at once">
+                                                <option value="replace" :selected="s.streamMode!=='grid'">single</option>
+                                                <option value="grid" :selected="s.streamMode==='grid'">grid</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="sc-maxchars" x-show="s.accept && s.accept.text" x-cloak>
-                                    <label>Text limit
-                                        <input type="number" min="0" step="1" x-model.number="s.maxChars" @change="saveMaxChars(project(),s)" title="Max characters per message — 0 = unlimited">
-                                    </label>
-                                    <span class="muted">chars · 0 = unlimited</span>
+
+                                <hr class="sc-hr">
+
+                                <!-- what the audience sees on the drop page -->
+                                <div class="sc-section">
+                                    <div class="sc-section-lbl">Drop page</div>
+                                    <div class="sc-fields">
+                                        <label class="sc-field">
+                                            <span class="sc-flabel">Title</span>
+                                            <input type="text" maxlength="40" x-model="s.buttonLabel" @change="saveButtonLabel(project(),s)" placeholder="label on the drop home — empty = hidden">
+                                        </label>
+                                        <label class="sc-field">
+                                            <span class="sc-flabel">Intro</span>
+                                            <textarea rows="2" maxlength="500" x-model="s.welcome" @change="saveWelcome(project(),s)" placeholder="First message people see when they open this drop (e.g. “Send us your best photo of the show!”)."></textarea>
+                                        </label>
+                                        <label class="sc-field">
+                                            <span class="sc-flabel">Auto-answers</span>
+                                            <textarea rows="3" maxlength="2000" x-model="s.autoReplies" @change="saveAutoReplies(project(),s)" placeholder="One reply per line — sent back automatically after each message, like a chat bot:&#10;Thanks!&#10;Nice one 🙌&#10;Keep them coming!"></textarea>
+                                            <span class="sc-fhint muted">One line = one auto-reply, sent after each contribution.</span>
+                                        </label>
+                                    </div>
                                 </div>
-                                <div class="sc-relay" x-show="s.accept && (s.accept.text || s.accept.image)" x-cloak>
-                                    <span class="muted" title="Forward incoming messages to the KXKM relay (relay.kxkm.net)" x-html="icon('relay')"></span>
-                                    <span class="muted">Relay</span>
-                                    <button class="iconbtn tchip" x-show="s.accept && s.accept.text" :class="{on: s.relayText}" @click="toggleRelay(project(),s,'text')" title="Relay incoming text to relay.kxkm.net" x-html="icon('text')"></button>
-                                    <button class="iconbtn tchip" x-show="s.accept && s.accept.image" :class="{on: s.relayImage}" @click="toggleRelay(project(),s,'image')" title="Relay incoming images to relay.kxkm.net" x-html="icon('image')"></button>
-                                </div>
-                                <div class="sc-welcome" x-show="welcomeOpen[s.id]" x-cloak>
-                                    <textarea rows="2" maxlength="500" x-model="s.welcome" @change="saveWelcome(project(),s)"
-                                        placeholder="Welcome message — shown to people who open this drop, as an incoming message (e.g. “Send us your best photo of the show!”)"></textarea>
-                                </div>
+
+                                <hr class="sc-hr">
+
                                 <button class="sc-media" @click="openMediaModal(project(),s)">
                                     <span x-html="icon('image')"></span>
                                     <span x-text="s.count + (s.count===1?' media':' medias')"></span>
@@ -170,10 +223,14 @@
                     </div>
                 </section>
 
+                </div><!-- /ws-tab: scenes -->
+
+                <!-- ===== TAB: Live control ===== -->
+                <div class="ws-tab" x-show="wsTab==='control'" x-cloak>
+
                 <!-- LIVE CONTROL ROOM -->
                 <section class="control-room">
                     <div class="cr-head">
-                        <h2>Live control</h2>
                         <button class="learn-toggle" :class="{on: consoleLearn}" @click="toggleConsoleLearn()">
                             <span x-html="icon('gear')"></span> <span x-text="consoleLearn ? 'MIDI learn — ON' : 'MIDI learn'"></span>
                         </button>
@@ -194,7 +251,7 @@
                                         <strong x-text="st.nickname"></strong>
                                         <span class="cr-machine muted" x-text="st.machine ? (st.machine.name + (st.machine.type ? ' · '+st.machine.type : '')) : 'no machine'"></span>
                                     </div>
-                                    <button class="iconbtn" title="Open display" @click="st.machine && openShare(machineUrl(st.machine), st.nickname)" x-html="icon('share')"></button>
+                                    <button class="iconbtn" title="Open display" @click="st.machine && openShare(machineUrl(st.machine), st.nickname)" x-html="icon('qr')"></button>
                                     <button class="iconbtn" :class="{on: !mediaFilterAll(st)}" title="Media filter — choose which media types this station shows" @click="toggleMediaFilterOpts(st)" x-html="icon('filter')"></button>
                                     <button class="iconbtn" title="Station settings" @click="openStationModal(project(), st)" x-html="icon('gear')"></button>
                                     <button class="iconbtn danger" title="Remove station" @click="removeStation(project(), st)" x-html="icon('close')"></button>
@@ -256,6 +313,17 @@
                     </div>
                     <p class="muted hint" x-show="consoleLearn">Click a scene / clip / transport / stop / blackout, then press a MIDI pad to bind it for that station.</p>
                 </section>
+
+                </div><!-- /ws-tab: control -->
+
+                <!-- ===== TAB: Sequencer (not yet implemented) ===== -->
+                <div class="ws-tab" x-show="wsTab==='sequencer'" x-cloak>
+                    <div class="ws-placeholder">
+                        <span class="ph-ico" x-html="icon('sliders')"></span>
+                        <h2>Sequencer</h2>
+                        <p class="muted">Not yet implemented. Timeline-based cue sequencing — trigger scenes and clips across stations on a timeline — will live here.</p>
+                    </div>
+                </div><!-- /ws-tab: sequencer -->
             </div>
         </template>
     </main>

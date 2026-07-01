@@ -107,6 +107,7 @@
     let accept = { image: true, video: true, audio: false, text: false, stream: false };
     let allowSelfDelete = false;
     let welcome = '';            // operator's intro message, shown as an incoming bubble
+    let autoReplies = [];        // scripted bot answers: one sent after each of my contributions
     let maxChars = 140;          // text-input cap from the scene; 0 = unlimited
     let ICE = [];
     let sender = null;
@@ -141,17 +142,37 @@
     $('nickBtn').onclick = () => showNick(false);
 
     // ---- meta ----
+    // apply the scene config (accept types, intro, auto-answers, text cap). Called
+    // once on load and again whenever the operator edits it (live 'drop-meta' push).
+    function applyMeta(info) {
+        accept = info.accept || accept;
+        if (typeof info.allowSelfDelete === 'boolean') allowSelfDelete = info.allowSelfDelete;
+        welcome = (info.welcome || '').trim();
+        if (Array.isArray(info.autoReplies)) autoReplies = info.autoReplies;
+        if (typeof info.maxChars === 'number' && info.maxChars >= 0) maxChars = Math.floor(info.maxChars);
+        setupComposer();
+        render();
+    }
     fetch('/api/drop/' + token).then(r => r.ok ? r.json() : Promise.reject()).then(info => {
         $('sub').textContent = (info.project || '') + (info.source ? ' · ' + info.source : '');
-        accept = info.accept || accept;
-        allowSelfDelete = info.allowSelfDelete;
-        welcome = (info.welcome || '').trim();
-        maxChars = (typeof info.maxChars === 'number' && info.maxChars >= 0) ? Math.floor(info.maxChars) : 140;
         ICE = info.ice || [];
-        setupComposer();
+        applyMeta(info);
         if (!nick) showNick(true); else $('nickName').textContent = nick;
         loadMine();
+        connectMeta();
     }).catch(() => { $('sub').textContent = 'unknown'; });
+
+    // live config: operator edits to the intro / auto-answers / accepted types are
+    // pushed to this open page. Best-effort — the page works fine without it.
+    let metaSocket = null;
+    function connectMeta() {
+        if (!window.io || metaSocket) return;
+        try { metaSocket = io(); } catch (e) { return; }
+        const join = () => metaSocket.emit('drop-join', token);
+        metaSocket.on('connect', join);
+        if (metaSocket.connected) join();
+        metaSocket.on('drop-meta', (m) => { if (m) applyMeta(m); });
+    }
 
     function mediaFamilies() {
         const f = [];
@@ -165,18 +186,22 @@
     function setupComposer() {
         const fam = mediaFamilies();
 
-        // header: go-live camera button
-        if (accept.stream) $('liveBtn').classList.remove('hidden');
+        // header: go-live camera button (toggles both ways — accept can change live)
+        $('liveBtn').classList.toggle('hidden', !accept.stream);
 
         // text field + send button
-        if (!accept.text) { $('textInput').classList.add('hidden'); $('sendBtn').classList.add('hidden'); }
-        else if (maxChars > 0) $('textInput').setAttribute('maxlength', String(maxChars));
-        else $('textInput').removeAttribute('maxlength');
+        const noText = !accept.text;
+        $('textInput').classList.toggle('hidden', noText);
+        $('sendBtn').classList.toggle('hidden', noText);
+        if (!noText) {
+            if (maxChars > 0) $('textInput').setAttribute('maxlength', String(maxChars));
+            else $('textInput').removeAttribute('maxlength');
+        }
 
         // attach / media button
         const attachBtn = $('attachBtn');
-        if (!fam.length) attachBtn.classList.add('hidden');
-        else {
+        attachBtn.classList.toggle('hidden', !fam.length);
+        if (fam.length) {
             const single = fam.length === 1 ? fam[0] : null;
             // a dedicated, labelled button when the scene is one media family only
             // (e.g. audio-only -> "Send audio"); grouped "+" media icon otherwise.
@@ -191,7 +216,7 @@
         }
 
         // an empty composer (stream-only) is hidden entirely
-        if (!accept.text && !fam.length) $('composer').classList.add('hidden');
+        $('composer').classList.toggle('hidden', !accept.text && !fam.length);
 
         // library picker accepts whatever AV the scene takes
         const av = [];
@@ -337,25 +362,34 @@
     }
 
     function render() {
-        const items = serverItems.slice().sort((a, b) => a.time - b.time)
-            .concat(pending.map(p => Object.assign({ pending: true }, p)));
+        const confirmed = serverItems.slice().sort((a, b) => a.time - b.time);
         timeline.querySelectorAll('.msg, .day-sep').forEach(n => n.remove());
-        if (welcome) timeline.appendChild(welcomeBubble(welcome));   // pinned intro at the top
+        if (welcome) timeline.appendChild(incomingBubble(welcome, 'welcome'));   // pinned intro at the top
         let lastDay = '';
-        items.forEach(u => {
-            const dl = dayLabel(u.time);
+        const daySep = (ms) => {
+            const dl = dayLabel(ms);
             if (dl !== lastDay) { lastDay = dl; const sep = document.createElement('div'); sep.className = 'day-sep'; sep.textContent = dl; timeline.appendChild(sep); }
+        };
+        // my confirmed contributions, each followed by the next scripted auto-answer
+        // (line 1 after the 1st, line 2 after the 2nd, …) — like a chat bot.
+        let replyIdx = 0;
+        confirmed.forEach(u => {
+            daySep(u.time);
             timeline.appendChild(bubble(u));
+            if (replyIdx < autoReplies.length) timeline.appendChild(incomingBubble(autoReplies[replyIdx++], 'bot'));
         });
+        // in-flight (optimistic) bubbles — their auto-answer arrives once they confirm
+        pending.forEach(p => { const u = Object.assign({ pending: true }, p); daySep(u.time); timeline.appendChild(bubble(u)); });
         // the welcome message already gives instructions, so suppress the generic empty hint when it's set
-        $('emptyHint').classList.toggle('hidden', items.length > 0 || !!welcome);
+        $('emptyHint').classList.toggle('hidden', (confirmed.length + pending.length) > 0 || !!welcome);
         timeline.scrollTop = timeline.scrollHeight;
     }
 
-    // operator's welcome message: an incoming (left-aligned) text bubble, no time/tick/delete
-    function welcomeBubble(text) {
+    // operator message (intro or a scripted auto-answer): an incoming (left-aligned)
+    // text bubble, no time/tick/delete.
+    function incomingBubble(text, extraClass) {
         const wrap = document.createElement('div');
-        wrap.className = 'msg them text welcome';
+        wrap.className = 'msg them text ' + (extraClass || '');
         const body = document.createElement('div'); body.className = 'msg-body text';
         body.textContent = text;
         wrap.appendChild(body);
@@ -490,5 +524,6 @@
     }
     function stopCamera() { if (sender) { sender.stop(); sender = null; } $('camOverlay').classList.add('hidden'); }
 
-    // ---- future: server broadcast messages would append here as .msg.them ----
+    // Incoming operator messages (the pinned intro + scripted auto-answers) render
+    // as .msg.them via incomingBubble(); a live 'drop-meta' push refreshes them.
 })();

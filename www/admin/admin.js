@@ -47,12 +47,14 @@ const ICONS = {
     cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>',
     monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
     message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-    relay: '<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/>'
+    relay: '<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/>',
+    sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>'
 };
 
 function adminApp() {
     return {
         view: 'projects',
+        wsTab: 'scenes',   // workspace sub-view: 'scenes' | 'control' | 'sequencer'
         projectId: null,
         publicUrl: '',
         projects: [],
@@ -60,7 +62,7 @@ function adminApp() {
         deviceTypes: [],
         toast: '',
         // scene/media explorer state (keyed by scene id)
-        expanded: {}, files: {}, sel: {}, welcomeOpen: {},
+        expanded: {}, files: {}, sel: {},
         uploading: {}, uploadTarget: null,
         // overlays
         share: { open: false, url: '', title: '' },
@@ -131,6 +133,7 @@ function adminApp() {
         async guard(fn) { try { await fn(); } catch (e) { this.notify('Error: ' + e.message); } },
         base() { return (this.publicUrl || location.origin).replace(/\/$/, ''); },
         dropUrl(s) { return this.base() + '/d/' + s.dropToken; },
+        homeUrl(p) { return this.base() + '/h/' + p.homeToken; },
         machineUrl(m) { return this.base() + '/p/' + m.token; },
         qrPng(d) { return '/admin/api/qr?type=png&data=' + encodeURIComponent(d); },
 
@@ -180,7 +183,7 @@ function adminApp() {
             }
             this.$nextTick(() => { window.scrollTo(0, opts.fromPop ? (state.scrollY || 0) : 0); });
         },
-        openProject(p) { this.go({ view: 'workspace', projectId: p.id }); },
+        openProject(p) { this.wsTab = 'scenes'; this.go({ view: 'workspace', projectId: p.id }); },
         goProjects() { this.go({ view: 'projects' }); },
         goMachines() { this.go({ view: 'machines' }); },
 
@@ -203,6 +206,7 @@ function adminApp() {
             this.guard(async () => { const r = await api('POST', '/projects', { name }); await this.loadProjects(); this.openProject(r.project); });
         },
         renameProject(p) { const name = prompt('Project name', p.name); if (!name) return; this.guard(async () => { const r = await api('PUT', '/projects/' + p.id, { name }); this.replaceProject(r.project); }); },
+        saveHomeWelcome(p) { this.guard(async () => { const r = await api('PUT', '/projects/' + p.id, { homeWelcome: p.homeWelcome || '' }); this.replaceProject(r.project); }); },
         deleteProject(p) {
             if (!confirm('Delete project "' + p.name + '"? Media files stay on disk.')) return;
             this.guard(async () => { await api('DELETE', '/projects/' + p.id); await this.loadAll(); this.goProjects(); });
@@ -211,9 +215,12 @@ function adminApp() {
         // ---- scenes ----
         addScene(p) { const name = prompt('Scene name', 'Scene'); if (name === null) return; this.guard(async () => { const r = await api('POST', '/projects/' + p.id + '/sources', { name: name.trim() || 'Scene' }); this.replaceProject(r.project); }); },
         renameScene(p, s) { const name = prompt('Scene name', s.name); if (!name) return; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { name: name.trim() }); this.replaceProject(r.project); }); },
-        deleteScene(p, s) { if (!confirm('Delete scene "' + s.name + '"? Files stay on disk.')) return; this.guard(async () => { const r = await api('DELETE', `/projects/${p.id}/sources/${s.id}`); this.replaceProject(r.project); delete this.expanded[s.id]; delete this.files[s.id]; delete this.sel[s.id]; delete this.welcomeOpen[s.id]; }); },
-        toggleWelcome(s) { this.welcomeOpen[s.id] = !this.welcomeOpen[s.id]; },
+        deleteScene(p, s) { if (!confirm('Delete scene "' + s.name + '"? Files stay on disk.')) return; this.guard(async () => { const r = await api('DELETE', `/projects/${p.id}/sources/${s.id}`); this.replaceProject(r.project); delete this.expanded[s.id]; delete this.files[s.id]; delete this.sel[s.id]; }); },
+        // intro + scripted auto-answers: autosave on change; the server pushes both
+        // live to any open audience drop pages (see routes/admin.js pushDropMeta).
         saveWelcome(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { welcome: s.welcome || '' }); this.replaceProject(r.project); }); },
+        saveAutoReplies(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { autoReplies: s.autoReplies || '' }); this.replaceProject(r.project); }); },
+        saveButtonLabel(p, s) { const v = String(s.buttonLabel || '').trim().slice(0, 40); s.buttonLabel = v; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { buttonLabel: v }); this.replaceProject(r.project); }); },
         toggleSelfDelete(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { allowSelfDelete: !s.allowSelfDelete }); this.replaceProject(r.project); }); },
         acceptAll(s) { return !!(s.accept && s.accept.image && s.accept.video && s.accept.audio && s.accept.text && s.accept.stream); },
         setAcceptAll(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept: { image: true, video: true, audio: true, text: true, stream: true } }); this.replaceProject(r.project); }); },

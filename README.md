@@ -21,9 +21,20 @@ Dropfile turns drop-folders and displays into a small **media controller**:
   share that link. The admin can add media and **reorder** it (drag); the chosen
   order drives playback. New uploads append in upload-time order. Each uploader
   only ever sees and deletes *their own* contributions.
+- **Project drop home** — a project also has its own **menu URL** (+QR, via the QR
+  button in the workspace header) showing the project title, an optional **intro**
+  message, and a button per scene. A scene appears on the menu only when you give it
+  a **Title** (in its card); picking a button forwards to that scene's normal chat
+  drop page. Handy for a single QR that lets people choose where to send.
 - **Content types** — each scene picks what it accepts: **images**, **videos**,
-  **text** (saved as `.txt`), and/or a live **camera stream**. The drop page is a
-  **KXKM chat** that adapts: a message box, a media attach button, and/or *Go live*.
+  **audio**, **text** (saved as `.txt`), and/or a live **camera stream**. The drop
+  page is a **KXKM chat** that adapts: a message box, a media attach button, and/or
+  *Go live*.
+- **Intro & auto-answers** — each scene has an always-visible **Intro** (the first
+  message people see when they open its chat) and an **Auto-answers** script (one
+  reply per line): after each thing a visitor sends, the next line is posted back
+  like a chat bot. Editing either **autosaves** and pushes **live** to phones that
+  already have the drop page open.
 - **Player modes** — *diaporama* (auto-advance) or *manual* (a held clip), switched
   live from the control room. A **MIDI** controller and the admin playback remote
   (prev/next/play-pause/restart/blackout) drive either mode as control surfaces. A
@@ -85,6 +96,7 @@ npm start                            # node server.js
   (live control room + scenes/media), and a **Machines** pool page (configure
   boxes, device types, share the kiosk URL). `/diag` for WebRTC.
 - `/d/<dropToken>` — a scene's **KXKM chat** drop page (open via its QR/link).
+- `/h/<homeToken>` — a project's **drop home**: a menu of its labelled scenes.
 - `/p/<machineToken>` — a machine's kiosk display (open on the box; URL is fixed).
 
 The old `/admin` Filebrowser and the `/diaporama?folder=…` page are gone;
@@ -105,7 +117,7 @@ lib/thumbs.js        # sharp (images) + ffmpeg (video posters) thumbnail cache
 lib/auth.js          # HTTP Basic middleware (ADMIN_PASSWORD)
 lib/turn.js          # WebRTC ICE: short-lived coturn credentials (TURN REST)
 lib/migrate.js       # import legacy folders + split players->machines/stations
-routes/drop.js       # /d, /api/drop/* (upload, text, blind "my uploads")
+routes/drop.js       # /d, /api/drop/* (upload, text, blind "my uploads"); /h, /api/home/* (project menu)
 routes/player.js     # /p, /api/player/* (machine kiosk), /diag, /api/ice
 routes/admin.js      # /admin/api/* machines + per-project stations + scenes
 sockets/index.js     # machine rooms + WebRTC stream signaling (offer/answer/ice)

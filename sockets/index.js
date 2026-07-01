@@ -18,6 +18,13 @@ module.exports = function (io, ctx) {
         // admin console listens for live machine status
         socket.on('admin-join', () => { socket.join('admins'); socket.emit('status-snapshot', liveStatus); });
 
+        // an open audience drop page joins its scene's room so operator edits to
+        // the intro / auto-answers / accepted types push to it live ('drop-meta').
+        socket.on('drop-join', (token) => {
+            const found = model.findSourceByDropToken(String(token || ''));
+            if (found) socket.join('drop:' + found.source.id);
+        });
+
         // a machine reports what it is currently showing
         socket.on('player-status', (msg) => {
             const machine = model.findMachineByToken(String((msg && msg.token) || ''));

@@ -106,23 +106,64 @@ button .ic, .btn .ic { width: 15px; height: 15px; }
 .media-filter-opts .mf-label { font-size: 12px; color: var(--muted); margin-right: 2px; }
 
 /* ===== scenes & media (workspace) ===== */
+.ws-head .iconbtn.on { color: var(--accent); border-color: var(--accent); }
+.ws-home { margin: -6px 0 18px; display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.ws-home .hint { margin: 0; }
 .ws-scenes { margin-top: 8px; margin-bottom: 22px; }
-.scenes { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-.scene-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+/* workspace sub-tabs (Scenes & media / Live control / Sequencer) */
+.ws-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 0 18px; flex-wrap: wrap; }
+.ws-tabs button { background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); padding: 9px 14px; margin-bottom: -1px; cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; gap: 7px; }
+.ws-tabs button:hover { color: var(--text); border-color: transparent; }
+.ws-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.ws-tabs button .ic { width: 15px; height: 15px; }
+.ws-tab .control-room { margin-top: 0; padding-top: 0; border-top: none; }
+.ws-tab .ws-home { margin-top: 0; }
+
+/* placeholder for not-yet-built tabs */
+.ws-placeholder { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 60px 20px; color: var(--muted); }
+.ws-placeholder .ph-ico { color: var(--line); }
+.ws-placeholder .ph-ico svg { width: 48px; height: 48px; }
+.ws-placeholder h2 { margin: 0; color: var(--text); font-size: 18px; }
+.ws-placeholder p { margin: 0; max-width: 440px; font-size: 13px; line-height: 1.6; }
+/* larger scene cards — at most 2 per row (min 440px within the 1180px page) */
+.scenes { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 14px; align-items: start; }
+.scene-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
 .scene-card.dragging { opacity: .45; }
+.scene-card .sc-hr { border: none; border-top: 1px solid var(--line); width: 100%; margin: 0; }
 .sc-top { display: flex; align-items: center; gap: 6px; }
-.sc-top .scene-name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-types { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.sc-top .scene-name { flex: 1 1 auto; min-width: 0; font-size: 15px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+.sc-top .iconbtn { flex: none; }
 .sc-media { width: 100%; justify-content: center; background: var(--panel2); }
-.sc-top .iconbtn.on { color: var(--accent); border-color: var(--accent); }
-.sc-welcome textarea { width: 100%; box-sizing: border-box; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 8px 9px; font: inherit; font-size: 13px; line-height: 1.45; resize: vertical; min-height: 44px; }
-.sc-welcome textarea:focus { border-color: var(--accent); outline: none; }
-.sc-relay { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-.sc-relay svg { width: 15px; height: 15px; }
-.sc-maxchars { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-.sc-maxchars label { display: inline-flex; align-items: center; gap: 6px; }
-.sc-maxchars input { width: 64px; padding: 3px 6px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 5px; font: inherit; font-size: 12px; }
-.sc-maxchars input:focus { border-color: var(--accent); outline: none; }
+
+/* card sections (Accepts / Drop page) */
+.sc-section { display: flex; flex-direction: column; gap: 8px; }
+.sc-section-head { display: flex; align-items: center; gap: 8px; }
+.sc-section-head .sc-section-lbl { flex: 1; }
+.sc-section-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+
+/* "Accepts" checklist — a row per media type, options inline on the row */
+.sc-accept { display: flex; flex-direction: column; gap: 5px; }
+.sc-arow { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.sc-toggle { display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; min-width: 132px; background: var(--panel2); border: 1px solid var(--line); color: var(--muted); border-radius: 7px; padding: 5px 11px 5px 9px; cursor: pointer; font-size: 13px; }
+.sc-toggle:hover { border-color: var(--accent); }
+.sc-toggle.on { background: var(--accent); border-color: var(--accent); color: #06122a; font-weight: 600; }
+.sc-toggle .sc-tico { display: flex; }
+.sc-toggle .ic { width: 16px; height: 16px; }
+.sc-limit { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.sc-limit input { width: 56px; padding: 3px 6px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 5px; font: inherit; font-size: 12px; }
+.sc-limit input:focus { border-color: var(--accent); outline: none; }
+.relaychip { display: inline-flex; align-items: center; gap: 4px; }
+.relaychip svg { width: 13px; height: 13px; }
+
+/* "Drop page" labelled fields (menu button / intro / auto-answers) */
+.sc-fields { display: flex; flex-direction: column; gap: 11px; }
+.sc-field { display: flex; flex-direction: column; gap: 4px; }
+.sc-flabel { font-size: 12px; color: var(--muted); }
+.sc-field input[type=text], .sc-field textarea { width: 100%; box-sizing: border-box; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 13px; line-height: 1.45; }
+.sc-field textarea { resize: vertical; min-height: 44px; }
+.sc-field input:focus, .sc-field textarea:focus { border-color: var(--accent); outline: none; }
+.sc-fhint { font-size: 11px; }
 .scene-name { font-weight: 600; }
 .sidx { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 22px; padding: 0 4px; border-radius: 5px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; cursor: grab; flex: none; }
 .sidx:active { cursor: grabbing; }

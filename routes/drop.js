@@ -47,6 +47,24 @@ module.exports = function (ctx) {
         res.sendFile(path.join(__dirname, '..', 'www', 'drop.html'));
     });
 
+    // project "drop home" — a menu page listing the project's labelled scenes so a
+    // visitor can pick which one to send to. Same HTML for every project token.
+    router.get('/h/:token', (req, res) => {
+        res.set('Cache-Control', 'no-cache');
+        res.sendFile(path.join(__dirname, '..', 'www', 'home.html'));
+    });
+
+    // metadata for a project drop home: title, intro, and the scene buttons.
+    // A scene is listed only when it carries a (non-empty) buttonLabel.
+    router.get('/api/home/:token', (req, res) => {
+        const project = model.findProjectByHomeToken(req.params.token);
+        if (!project) return res.status(404).json({ error: 'unknown drop' });
+        const scenes = model.orderedScenes(project)
+            .filter(s => s.dropToken && String(s.buttonLabel || '').trim())
+            .map(s => ({ label: String(s.buttonLabel).trim(), url: '/d/' + s.dropToken }));
+        res.json({ project: project.name, welcome: project.homeWelcome || '', scenes });
+    });
+
     // metadata about this drop (name etc.) — no file listing
     router.get('/api/drop/:token', resolveDrop, (req, res) => {
         res.json({
@@ -56,6 +74,7 @@ module.exports = function (ctx) {
             allowSelfDelete: !!req.dropSource.allowSelfDelete,
             accept: req.dropSource.accept || { image: true, video: true, audio: false, text: false, stream: false },
             welcome: req.dropSource.welcome || '',   // operator's intro, shown as an incoming message
+            autoReplies: model.autoReplyLines(req.dropSource),  // scripted bot answers, one per contribution
             maxChars: dropMaxChars(req.dropSource),  // text-input cap; 0 = unlimited
             ice: turn.iceServers()
         });
