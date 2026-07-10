@@ -6,21 +6,23 @@ Dropfile turns drop-folders and displays into a small **media controller**:
   Each machine has a static name, a device type (from an editable list) and a
   **fixed kiosk URL** (+QR) set once on the box — it never changes across projects.
 - **Stations** — per project, a machine bound into the show with its own **display
-  surface** (forced resolution, even-line suppression, position, fit, rotation),
-  playback options and MIDI map, plus a rig nickname ("Totem screen", "Cart 1").
+  surface** (forced resolution, even-line suppression, position, fit, rotation)
+  and MIDI map, plus a rig nickname ("Totem screen", "Cart 1").
   The same box is a different station in each project — the surface belongs to the
   *screen-in-this-show*, the URL to the *box*. Activating a scene on a station
   drives its machine, taking it over from any other project using that box.
 - **Projects / workspaces** — content groupings. The admin opens a project into a
   **workspace**: a live **control room** (one column per **station** — click a
   scene to make it active, click a clip to show it, transport + stop + blackout,
-  console **MIDI learn**; a gear opens the station's surface/playback settings)
-  plus scenes & media management.
+  console **MIDI learn**; a gear opens the station's surface settings, and a
+  per-scene gear its diaporama playback options) plus scenes & media management.
 - **Scenes** — a folder of media inside a project. Every scene is reachable by its
   **URL** (+QR via the share button); access is controlled simply by whether you
   share that link. The admin can add media and **reorder** it (drag); the chosen
   order drives playback. New uploads append in upload-time order. Each uploader
-  only ever sees and deletes *their own* contributions.
+  only ever sees and deletes *their own* contributions. Each scene carries its own
+  **diaporama playback** — image duration, loop (all / last X) and whether to
+  prioritise new uploads — applied on whatever station is showing it.
 - **Project drop home** — a project also has its own **menu URL** (+QR, via the QR
   button in the workspace header) showing the project title, an optional **intro**
   message, and a button per scene. A scene appears on the menu only when you give it
@@ -55,6 +57,12 @@ reachable coturn, verified at `/diag`.
 - pm2 (production process manager)
 
 `sharp` (image thumbnails) and `qrcode` are installed via npm.
+
+**Kiosk boxes** that display **text** clips containing emoji need a colour-emoji
+font installed on the box itself — e.g. `sudo apt install fonts-noto-color-emoji`
+on Debian/Ubuntu. The player names the emoji families in its canvas font so Chrome
+on Linux falls back to them (Firefox/macOS work without this); without a colour
+font on the box the emoji render blank.
 
 ## Install
 

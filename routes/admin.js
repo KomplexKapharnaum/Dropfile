@@ -91,7 +91,8 @@ module.exports = function (ctx) {
             dropToken: ids.token(), allowSelfDelete: true, order: [],
             accept: accept ? cleanAccept(accept) : defaultAccept(),
             welcome: '', autoReplies: '', streamMode: 'replace', maxChars: 140,
-            relayText: false, relayImage: false, buttonLabel: '', createdAt: Date.now()
+            relayText: false, relayImage: false, buttonLabel: '',
+            playback: defaults.defaultPlayback(), createdAt: Date.now()
         };
         p.sources = p.sources || {};
         p.sources[sid] = scene;
@@ -113,6 +114,7 @@ module.exports = function (ctx) {
             maxChars: cleanMaxChars(s.maxChars),
             relayText: !!s.relayText, relayImage: !!s.relayImage,
             buttonLabel: cleanButtonLabel(s.buttonLabel),
+            playback: defaults.cleanPlayback(s.playback),
             count: sceneCount(p, s)
         };
     }
@@ -153,7 +155,6 @@ module.exports = function (ctx) {
         return {
             id: st.id, machineId: st.machineId, nickname: st.nickname,
             surface: defaults.cleanSurface(st.surface),
-            playback: defaults.cleanPlayback(st.playback),
             mediaFilter: defaults.cleanMediaFilter(st.mediaFilter),
             midi: { map: (st.midi && st.midi.map) || {} },
             machine: m ? { id: m.id, name: m.name, type: m.type || '', token: m.token } : null,
@@ -335,8 +336,14 @@ module.exports = function (ctx) {
         if (typeof req.body.relayText === 'boolean') s.relayText = req.body.relayText;
         if (typeof req.body.relayImage === 'boolean') s.relayImage = req.body.relayImage;
         if (typeof req.body.buttonLabel === 'string') s.buttonLabel = cleanButtonLabel(req.body.buttonLabel);
+        let playbackChanged = false;
+        if (req.body.playback && typeof req.body.playback === 'object') {
+            s.playback = defaults.cleanPlayback(Object.assign({}, s.playback, req.body.playback));
+            playbackChanged = true;
+        }
         store.save();
         refreshSceneMachines(s.id); // push new accept/streamMode to players already showing this scene
+        if (playbackChanged) for (const m of model.machinesForScene(s.id)) broadcastSettings(m); // live diaporama prefs
         pushDropMeta(s);            // live-update open audience drop pages (intro / auto-answers / accept …)
         res.json({ project: serializeProject(req._project) });
     });
@@ -460,7 +467,6 @@ module.exports = function (ctx) {
         const st = found.station;
         if (req.body.nickname) st.nickname = String(req.body.nickname).trim();
         if (req.body.surface && typeof req.body.surface === 'object') st.surface = defaults.cleanSurface(Object.assign({}, st.surface, req.body.surface));
-        if (req.body.playback && typeof req.body.playback === 'object') st.playback = defaults.cleanPlayback(Object.assign({}, st.playback, req.body.playback));
         if (req.body.midi && req.body.midi.map && typeof req.body.midi.map === 'object') { st.midi = st.midi || { map: {} }; st.midi.map = req.body.midi.map; }
         let filterChanged = false;
         if (req.body.mediaFilter && typeof req.body.mediaFilter === 'object') {

@@ -55,6 +55,7 @@ function adminApp() {
     return {
         view: 'projects',
         wsTab: 'scenes',   // workspace sub-view: 'scenes' | 'control' | 'sequencer'
+        isWide: false,     // wide workspace layout: 1 scene/row + inline media manager (set in init)
         projectId: null,
         publicUrl: '',
         projects: [],
@@ -84,7 +85,7 @@ function adminApp() {
             { cmd: 'next', label: 'Next', icon: 'next' },
             { cmd: 'reload', label: 'Reload', icon: 'reload' }
         ],
-        socket: null, status: {}, autoScroll: true, autoplayOpts: {}, mediaFilterOpts: {}, crOpen: {},
+        socket: null, status: {}, autoScroll: true, playbackOpts: {}, mediaFilterOpts: {}, crOpen: {},
         stationMidiMedia: {},   // station id -> active scene files (station modal, local MIDI)
         mediaTimers: {},        // scene id -> debounce timer for live media refresh
 
@@ -92,6 +93,11 @@ function adminApp() {
         pad(n) { return String(n).padStart(2, '0'); },
 
         async init() {
+            // wide layout: scenes stack one-per-row with the media manager inline on the
+            // right (keep this breakpoint in sync with the @media rule in admin.css)
+            const mq = window.matchMedia('(min-width: 900px)');
+            this.isWide = mq.matches;
+            mq.addEventListener('change', (e) => { this.isWide = e.matches; });
             try { const c = await api('GET', '/config'); this.publicUrl = c.publicUrl || location.origin; }
             catch (e) { this.publicUrl = location.origin; }
             if (!this.publicUrl) this.publicUrl = location.origin;
@@ -221,6 +227,8 @@ function adminApp() {
         saveWelcome(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { welcome: s.welcome || '' }); this.replaceProject(r.project); }); },
         saveAutoReplies(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { autoReplies: s.autoReplies || '' }); this.replaceProject(r.project); }); },
         saveButtonLabel(p, s) { const v = String(s.buttonLabel || '').trim().slice(0, 40); s.buttonLabel = v; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { buttonLabel: v }); this.replaceProject(r.project); }); },
+        // diaporama playback prefs (duration / loop / prioritise) — live to any station showing this scene
+        savePlayback(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { playback: s.playback }); this.replaceProject(r.project); }); },
         toggleSelfDelete(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { allowSelfDelete: !s.allowSelfDelete }); this.replaceProject(r.project); }); },
         acceptAll(s) { return !!(s.accept && s.accept.image && s.accept.video && s.accept.audio && s.accept.text && s.accept.stream); },
         setAcceptAll(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept: { image: true, video: true, audio: true, text: true, stream: true } }); this.replaceProject(r.project); }); },
@@ -337,7 +345,8 @@ function adminApp() {
         blackout(p, st) { if (this.consoleLearn) return this.learnConsole(st.id, { type: 'blackout' }); api('POST', `/projects/${p.id}/stations/${st.id}/command`, { cmd: 'blackout' }).catch(() => {}); },
         stop(p, st) { if (this.consoleLearn) return this.learnConsole(st.id, { type: 'stop' }); this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}/active`, { sceneId: '' }); this.replaceProject(r.project); }); },
         isStopped(st) { return !st.activeSceneId; },
-        toggleAutoplayOpts(st) { this.autoplayOpts[st.id] = !this.autoplayOpts[st.id]; },
+        // per-scene diaporama playback options (compact reveal on the control-room scene row)
+        togglePlaybackOpts(s) { this.playbackOpts[s.id] = !this.playbackOpts[s.id]; },
         // per-station media-type filter (which kinds of media this station displays)
         toggleMediaFilterOpts(st) { this.mediaFilterOpts[st.id] = !this.mediaFilterOpts[st.id]; },
         mediaFilterAll(st) { const f = st.mediaFilter || {}; return !!(f.image && f.video && f.audio && f.text && f.stream); },
@@ -382,7 +391,7 @@ function adminApp() {
         openStationModal(p, st) { this.stationModal = { open: true, pid: p.id, sid: st.id }; this.loadStationMidiMedia(st); },
         closeStationModal() { this.stationModal.open = false; },
         stationModalStation() { const p = this.project(); if (!p || !this.stationModal.open) return null; return (p.stations || []).find(st => st.id === this.stationModal.sid) || null; },
-        saveStation(st) { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', `/projects/${p.id}/stations/${st.id}`, { surface: st.surface, playback: st.playback }); this.notify('Applied live'); }); },
+        saveStation(st) { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', `/projects/${p.id}/stations/${st.id}`, { surface: st.surface }); this.notify('Applied live'); }); },
         loadStationMidiMedia(st) {
             const p = this.project();
             if (!p || !st.driving || !st.activeSceneId) { this.stationMidiMedia[st.id] = []; return; }

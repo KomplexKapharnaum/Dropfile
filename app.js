@@ -50,6 +50,9 @@ function build(opts = {}) {
     // fetched fresh; unchanged media is served from disk cache with zero network,
     // warm across kiosk reboots.
     app.use('/media', express.static(UPLOAD_PATH, { immutable: true, maxAge: 31536000000 }));
+    // Player display font(s): immutable binary assets (a new font ships under a
+    // new filename), so cache hard — warm across kiosk reboots like /media.
+    app.use('/fonts', express.static(path.join(__dirname, 'www', 'fonts'), { immutable: true, maxAge: 31536000000 }));
     app.get('/diaporama', (req, res) => res.redirect('/admin'));
     // Front-end code (player.js, receiver.js, midi.js, player.css, *.html): never
     // long-cache. Kiosks keep a persistent browser cache across reboots, so code

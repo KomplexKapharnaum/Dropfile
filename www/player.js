@@ -40,6 +40,13 @@
     let paused = false;
     let blackedOut = false;
     let textContent = '';       // current text clip's body (when current.type === 'text')
+    // House display face for text clips (see @font-face in player.css); falls back
+    // to the system stack until the font is loaded / if it fails to load. Emoji
+    // families are named explicitly so <canvas> fillText does per-glyph fallback to
+    // a colour-emoji font — Chrome/Linux won't reach one otherwise (unlike Firefox/
+    // macOS). The named font must exist on the box (e.g. `fonts-noto-color-emoji`).
+    const EMOJI_FALLBACK = `"Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Twemoji Mozilla"`;
+    const TEXT_FONT = `'Plaak56', system-ui, -apple-system, "Segoe UI", Roboto, ${EMOJI_FALLBACK}, sans-serif`;
     let midi = null;
     // camera takeover
     let receiver = null;
@@ -491,7 +498,7 @@
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const fsz = Math.max(16, Math.min(Math.round(boxH * 0.09), 64));
-        ctx.font = `600 ${fsz}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+        ctx.font = `600 ${fsz}px system-ui, -apple-system, "Segoe UI", Roboto, ${EMOJI_FALLBACK}, sans-serif`;
         ctx.fillText('♪ ' + label, 0, maxH / 2 + fsz * 1.6);
         ctx.restore();
     }
@@ -528,7 +535,7 @@
         ctx.fillStyle = '#fff';
         let size = Math.max(12, Math.min(Math.round(boxH * 0.5), 240));
         let lines = [];
-        const fontAt = (px) => `600 ${px}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+        const fontAt = (px) => `600 ${px}px ${TEXT_FONT}`;
         for (; size >= 12; size -= Math.max(2, Math.round(size * 0.08))) {
             lines = wrapText(text, maxW, fontAt(size));
             const widest = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
@@ -579,15 +586,22 @@
 
         ctx.save();
         ctx.scale(canvas.width / C.w, canvas.height / C.h);
+        // honour the surface rotation, same as the image / text / audio paths
+        const rot = ((sc.rotation % 360) + 360) % 360;
+        const swap = (rot === 90 || rot === 270);
+        const boxW = swap ? C.h : C.w, boxH = swap ? C.w : C.h;
+        ctx.translate(C.w / 2, C.h / 2);
+        if (rot) ctx.rotate(rot * Math.PI / 180);
+        ctx.translate(-boxW / 2, -boxH / 2);   // back to the (rotated) box's top-left
         const mode = (active && active.streamMode) || 'replace';
         if (mode === 'grid' && list.length > 1) {
             const n = list.length;
             const cols = Math.ceil(Math.sqrt(n));
             const rows = Math.ceil(n / cols);
-            const cw = C.w / cols, ch = C.h / rows;
+            const cw = boxW / cols, ch = boxH / rows;
             list.forEach((s, i) => drawVideoCover(s.video, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch));
         } else {
-            drawFittedVideo(list[list.length - 1].video, C.w, C.h, sc.fit); // newest = active
+            drawFittedVideo(list[list.length - 1].video, boxW, boxH, sc.fit); // newest = active
         }
         ctx.restore();
     }
@@ -697,6 +711,13 @@
     window.addEventListener('mousemove', pokeCursor);
     window.addEventListener('mousedown', pokeCursor);
     pokeCursor();        // arm the initial hide timer
+
+    // Force-load the text-clip display font: a <canvas> silently falls back to a
+    // system font if the face isn't loaded when we paint, so fetch it up front and
+    // redraw once it's ready (covers a text clip that was already showing).
+    if (document.fonts && document.fonts.load) {
+        document.fonts.load("64px 'Plaak56'").then(() => redraw()).catch(() => {});
+    }
 
     applySound();        // start muted so autoplay never blocks
     probeAutoSound();    // kiosks with no-gesture autoplay get sound immediately

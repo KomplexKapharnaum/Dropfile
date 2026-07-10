@@ -136,6 +136,25 @@ button .ic, .btn .ic { width: 15px; height: 15px; }
 .sc-top .iconbtn { flex: none; }
 .sc-media { width: 100%; justify-content: center; background: var(--panel2); }
 
+/* left config column; the inline media panel is wide-screen only (below) */
+.sc-config { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.sc-media-panel { display: none; }
+
+/* wide workspace: one scene per row, media manager inline on the right of each
+   card. The media panel is absolutely filled so it never grows the card height —
+   it just scrolls. (breakpoint kept in sync with isWide in admin.js) */
+@media (min-width: 900px) {
+    .scenes { grid-template-columns: 1fr; }
+    .scene-card { flex-direction: row; align-items: stretch; gap: 16px; min-height: 340px; }
+    .scene-card > .sc-config { flex: 1 1 auto; }
+    .scene-card > .sc-media { display: none; }   /* modal button hidden; media is inline */
+    .sc-media-panel { display: block; flex: 0 0 42%; max-width: 520px; position: relative; border-left: 1px solid var(--line); }
+    .sc-media-inner { position: absolute; inset: 0 0 0 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .sc-media-head { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; background: var(--panel); padding-bottom: 6px; z-index: 1; }
+    .sc-media-panel .grid-tools { margin: 0; }
+    .sc-media-panel .grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); align-content: start; }
+}
+
 /* card sections (Accepts / Drop page) */
 .sc-section { display: flex; flex-direction: column; gap: 8px; }
 .sc-section-head { display: flex; align-items: center; gap: 8px; }

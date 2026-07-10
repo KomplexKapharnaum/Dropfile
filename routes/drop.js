@@ -144,7 +144,7 @@ module.exports = function (ctx) {
 
         // optionally mirror the message to the KXKM relay (best-effort, never awaited)
         if (req.dropSource.relayText) {
-            relay.relayText({ from: `${nick} (${req.dropSource.name})`, text });
+            relay.relayText({ from: `${nick} (${req.dropSource.name})`, text, maxChars: max });
         }
         res.json({ ok: true, fileId });
     });

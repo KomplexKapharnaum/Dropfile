@@ -144,6 +144,7 @@
                     <div class="scenes" :data-scenes="project().id">
                         <template x-for="(s, idx) in project().sources" :key="s.id">
                             <div class="scene-card" :class="{dragging: isSceneDragging(project(),s)}" :data-sid="s.id" @dragover.prevent="sceneDragOver(project(),idx)" @drop.prevent>
+                                <div class="sc-config">
                                 <div class="sc-top">
                                     <span class="sidx" draggable="true" title="Drag to reorder" @dragstart="sceneDragStart(project(),idx,$event)" @dragend="sceneDragEnd(project())" x-text="pad(idx+1)"></span>
                                     <button class="iconbtn" title="Rename scene" @click="renameScene(project(),s)" x-html="icon('pencil')"></button>
@@ -212,6 +213,60 @@
 
                                 <hr class="sc-hr">
 
+                                <!-- how this scene's media plays back in the diaporama -->
+                                <div class="sc-section">
+                                    <div class="sc-section-lbl">Playback (diaporama)</div>
+                                    <div class="ap-opts">
+                                        <label class="field inline"><span>Duration (s)</span><input class="xnum" type="number" min="1" step="1" x-model.number="s.playback.imageDuration" @change="savePlayback(project(), s)"></label>
+                                        <label class="field inline"><span>Loop</span>
+                                            <select x-model="s.playback.loop" @change="savePlayback(project(), s)"><option value="all">all media</option><option value="lastX">last X</option></select>
+                                            <input class="xnum" type="number" min="1" step="1" x-show="s.playback.loop==='lastX'" x-model.number="s.playback.lastX" @change="savePlayback(project(), s)"></label>
+                                        <label class="chk small"><input type="checkbox" x-model="s.playback.prioritizeFresh" @change="savePlayback(project(), s)"> prioritise new uploads</label>
+                                    </div>
+                                </div>
+
+                                </div><!-- /sc-config -->
+
+                                <!-- media manager, inline on the right (wide screens): scrolls, capped to the card height -->
+                                <template x-if="isWide">
+                                    <div class="sc-media-panel">
+                                        <div class="sc-media-inner">
+                                            <div class="sc-media-head">
+                                                <span class="sc-section-lbl">Media</span>
+                                                <span class="count" x-text="s.count + (s.count===1?' file':' files')"></span>
+                                                <span class="spacer"></span>
+                                                <button class="iconbtn" title="Add media" @click="addMedia(project(),s)" x-html="icon('plus')"></button>
+                                            </div>
+                                            <div class="grid-tools">
+                                                <label class="chk small"><input type="checkbox" :checked="s.allowSelfDelete" @change="toggleSelfDelete(project(),s)"> uploaders delete own</label>
+                                                <span class="muted" x-show="uploading[s.id]">uploading…</span>
+                                                <span class="spacer"></span>
+                                                <template x-if="selCount(s) > 0">
+                                                    <span class="bulk">
+                                                        <span class="muted" x-text="selCount(s)+' selected'"></span>
+                                                        <button @click="bulk('archive',project(),s)"><span x-html="icon('archive')"></span> Archive</button>
+                                                        <button class="danger" @click="bulk('delete',project(),s)"><span x-html="icon('trash')"></span> Delete</button>
+                                                    </span>
+                                                </template>
+                                            </div>
+                                            <div class="grid" :data-grid="s.id">
+                                                <template x-for="(f, idx) in filesOf(s)" :key="f.name">
+                                                    <div class="tile" :class="{sel: isSel(s,f.name), dragging: isDragging(s,f)}" :data-name="f.name" draggable="true"
+                                                         @dragstart="mediaDragStart(s,idx,$event)" @dragover.prevent="mediaDragOver(s,idx)" @drop.prevent @dragend="mediaDragEnd(project(),s)" @click="tileClick(s,idx)">
+                                                        <input type="checkbox" class="tilechk" :checked="isSel(s,f.name)" @click.stop @change="toggleSel(s,f.name)">
+                                                        <img :src="f.thumb" loading="lazy" alt="">
+                                                        <span class="vbadge" x-show="f.type==='video'">▶</span>
+                                                        <span class="vbadge" x-show="f.type==='audio'">♪</span>
+                                                        <span class="vbadge" x-show="f.type==='text'">T</span>
+                                                    </div>
+                                                </template>
+                                                <p class="muted" x-show="(files[s.id]||[]).length===0">Empty — add media or share the drop link.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- narrow screens: manage media in a modal -->
                                 <button class="sc-media" @click="openMediaModal(project(),s)">
                                     <span x-html="icon('image')"></span>
                                     <span x-text="s.count + (s.count===1?' media':' medias')"></span>
@@ -274,14 +329,6 @@
                                     <button class="iconbtn" title="Next" @click="transport(project(),st,'next')" :class="{learned: consoleKey(st.id,{type:'transport',cmd:'next'})}" x-html="icon('next')"></button>
                                     <button class="iconbtn" title="Stop (clear scene)" @click="stop(project(),st)" :class="{active: isStopped(st), learned: consoleKey(st.id,{type:'stop'})}" x-html="icon('stop')"></button>
                                     <button class="iconbtn" title="Blackout" @click="blackout(project(),st)" :class="{learned: consoleKey(st.id,{type:'blackout'})}">⬛</button>
-                                    <button class="iconbtn" title="Auto-play options" @click="toggleAutoplayOpts(st)" x-html="icon('gear')"></button>
-                                </div>
-                                <div class="ap-opts" x-show="autoplayOpts[st.id]" x-cloak>
-                                    <label class="field inline"><span>Duration</span><input class="xnum" type="number" min="1" x-model.number="st.playback.imageDuration" @change="saveStation(st)"></label>
-                                    <label class="field inline"><span>Loop</span>
-                                        <select x-model="st.playback.loop" @change="saveStation(st)"><option value="all">all</option><option value="lastX">last X</option></select>
-                                        <input class="xnum" type="number" min="1" x-show="st.playback.loop==='lastX'" x-model.number="st.playback.lastX" @change="saveStation(st)"></label>
-                                    <label class="chk small"><input type="checkbox" x-model="st.playback.prioritizeFresh" @change="saveStation(st)"> prioritise new uploads</label>
                                 </div>
                                 <div class="cr-scenes">
                                     <template x-for="s in project().sources" :key="s.id">
@@ -292,6 +339,14 @@
                                                     <span class="kbadge" x-show="consoleKey(st.id,{type:'scene',sceneId:s.id})" x-text="consoleKey(st.id,{type:'scene',sceneId:s.id})"></span>
                                                 </button>
                                                 <button class="iconbtn scene-open" :class="{open: isSceneOpen(st, s)}" title="Open media — pick a clip directly" @click="toggleSceneOpen(st, s)" x-html="icon('down')"></button>
+                                                <button class="iconbtn" :class="{open: playbackOpts[s.id]}" title="Diaporama playback options" @click="togglePlaybackOpts(s)" x-html="icon('gear')"></button>
+                                            </div>
+                                            <div class="ap-opts" x-show="playbackOpts[s.id]" x-cloak>
+                                                <label class="field inline"><span>Duration</span><input class="xnum" type="number" min="1" x-model.number="s.playback.imageDuration" @change="savePlayback(project(), s)"></label>
+                                                <label class="field inline"><span>Loop</span>
+                                                    <select x-model="s.playback.loop" @change="savePlayback(project(), s)"><option value="all">all</option><option value="lastX">last X</option></select>
+                                                    <input class="xnum" type="number" min="1" x-show="s.playback.loop==='lastX'" x-model.number="s.playback.lastX" @change="savePlayback(project(), s)"></label>
+                                                <label class="chk small"><input type="checkbox" x-model="s.playback.prioritizeFresh" @change="savePlayback(project(), s)"> prioritise new uploads</label>
                                             </div>
                                             <template x-if="isSceneOpen(st, s)">
                                                 <div class="cr-clips" :data-cr-clips="isActiveScene(st,s) ? st.machineId : ''">
@@ -415,16 +470,6 @@
                             <label class="field inline"><span>Rotation</span>
                                 <select x-model.number="st.surface.rotation" @change="saveStation(st)"><option :value="0">0°</option><option :value="90">90°</option><option :value="180">180°</option><option :value="270">270°</option></select></label>
                             <label class="chk"><input type="checkbox" x-model="st.surface.evenLineSuppression" @change="saveStation(st)"> even-line squash (vertical 50%)</label>
-                        </fieldset>
-
-                        <fieldset class="settings">
-                            <legend>Auto-play</legend>
-                            <label class="field inline"><span>Duration (s)</span>
-                                <input type="number" min="1" step="1" x-model.number="st.playback.imageDuration" @change="saveStation(st)"></label>
-                            <label class="field inline"><span>Loop</span>
-                                <select x-model="st.playback.loop" @change="saveStation(st)"><option value="all">all media</option><option value="lastX">last X</option></select>
-                                <input class="xnum" type="number" min="1" step="1" x-show="st.playback.loop==='lastX'" x-model.number="st.playback.lastX" @change="saveStation(st)"></label>
-                            <label class="chk"><input type="checkbox" x-model="st.playback.prioritizeFresh" @change="saveStation(st)"> prioritise fresh uploads</label>
                         </fieldset>
 
                         <fieldset class="settings">

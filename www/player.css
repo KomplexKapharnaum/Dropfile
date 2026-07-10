@@ -1,3 +1,16 @@
+/* Plaak 56-Expanded Black — the KXKM house display face, used for text clips on
+   the player canvas. Static face (weight 900); the 400–900 range lets any weight
+   we request map straight to it with no faux-bold, and falls back to the system
+   stack until loaded / if it fails. player.js force-loads it before drawing since
+   <canvas> won't lazy-load a font. */
+@font-face {
+    font-family: 'Plaak56';
+    src: url('/fonts/Plaak56.otf') format('opentype');
+    font-weight: 400 900;
+    font-style: normal;
+    font-display: swap;
+}
+
 html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
 /* exact-pixel custom containers must not be scaled or centered by layout — the
    canvas is positioned absolutely and the stage clips any overflow. */
