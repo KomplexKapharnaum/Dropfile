@@ -33,6 +33,7 @@ module.exports = function (ctx) {
             id: ids.id(), machineId, nickname,
             surface: defaults.defaultSurface(), playback: defaults.defaultPlayback(),
             mediaFilter: defaults.defaultMediaFilter(),
+            ndi: defaults.defaultStationNdi(),
             midi: { map: {} }, createdAt: Date.now()
         };
     }
@@ -92,6 +93,7 @@ module.exports = function (ctx) {
             accept: accept ? cleanAccept(accept) : defaultAccept(),
             welcome: '', autoReplies: '', streamMode: 'replace', maxChars: 140,
             relayText: false, relayImage: false, buttonLabel: '',
+            ndi: defaults.defaultSceneNdi(),
             playback: defaults.defaultPlayback(), createdAt: Date.now()
         };
         p.sources = p.sources || {};
@@ -114,6 +116,7 @@ module.exports = function (ctx) {
             maxChars: cleanMaxChars(s.maxChars),
             relayText: !!s.relayText, relayImage: !!s.relayImage,
             buttonLabel: cleanButtonLabel(s.buttonLabel),
+            ndi: defaults.cleanNdi(s.ndi),
             playback: defaults.cleanPlayback(s.playback),
             count: sceneCount(p, s)
         };
@@ -156,6 +159,7 @@ module.exports = function (ctx) {
             id: st.id, machineId: st.machineId, nickname: st.nickname,
             surface: defaults.cleanSurface(st.surface),
             mediaFilter: defaults.cleanMediaFilter(st.mediaFilter),
+            ndi: defaults.cleanStationNdi(st.ndi),
             midi: { map: (st.midi && st.midi.map) || {} },
             machine: m ? { id: m.id, name: m.name, type: m.type || '', token: m.token } : null,
             driving,
@@ -332,6 +336,7 @@ module.exports = function (ctx) {
         if (typeof req.body.autoReplies === 'string') s.autoReplies = cleanAutoReplies(req.body.autoReplies);
         if (req.body.accept && typeof req.body.accept === 'object') s.accept = cleanAccept(req.body.accept);
         if (req.body.streamMode === 'replace' || req.body.streamMode === 'grid') s.streamMode = req.body.streamMode;
+        if (req.body.ndi && typeof req.body.ndi === 'object') s.ndi = defaults.cleanNdi(req.body.ndi);
         if (req.body.maxChars !== undefined) s.maxChars = cleanMaxChars(req.body.maxChars);
         if (typeof req.body.relayText === 'boolean') s.relayText = req.body.relayText;
         if (typeof req.body.relayImage === 'boolean') s.relayImage = req.body.relayImage;
@@ -473,11 +478,16 @@ module.exports = function (ctx) {
             st.mediaFilter = defaults.cleanMediaFilter(Object.assign({}, st.mediaFilter, req.body.mediaFilter));
             filterChanged = true;
         }
+        let ndiChanged = false;
+        if (req.body.ndi && typeof req.body.ndi === 'object') {
+            st.ndi = defaults.cleanStationNdi(Object.assign({}, st.ndi, req.body.ndi));
+            ndiChanged = true;
+        }
         store.save();
         const m = model.stationMachine(st);
         if (m && model.stationDriving(found.project.id, st)) {
             broadcastSettings(m);
-            if (filterChanged) broadcastActive(m);   // playlist + stream flag depend on the filter
+            if (filterChanged || ndiChanged) broadcastActive(m);   // playlist / stream flag / NDI source
         }
         res.json({ project: serializeProject(found.project) });
     });

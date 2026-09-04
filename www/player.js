@@ -50,6 +50,7 @@
     let midi = null;
     // camera takeover
     let receiver = null;
+    let ndi = null;
     let streaming = false;
     let streamRaf = null;
 
@@ -67,6 +68,7 @@
     // ---- socket ----
     const socket = io();
     receiver = new StreamReceiver({ token, socket, onChange: onStreamChange });
+    ndi = new NdiInput({ onChange: onStreamChange });
     socket.on('connect', () => { socket.emit('player-join', token); setStatus(''); });
     socket.on('disconnect', () => setStatus('reconnecting…'));
     socket.on('settings', (s) => { settings = s; layout(); if (learnEl && !learnEl.classList.contains('hidden')) buildLearn(); });
@@ -100,12 +102,17 @@
     // report what we're showing, for the admin control room
     function emitStatus() {
         let mode = 'stopped', name = null;
-        if (streaming) mode = 'stream';
+        if (streaming) { const top = liveList()[liveList().length - 1]; mode = (top && top.id === 'ndi') ? 'ndi' : 'stream'; }
         else if (blackedOut) mode = 'black';
         else if (current) { mode = (settings.playMode === 'manual') ? 'manual' : 'diaporama'; name = current.name; }
         else if (!queue.length) mode = 'stopped';
         else mode = (settings.playMode === 'manual') ? 'manual' : 'diaporama';
-        try { socket.emit('player-status', { token, status: { online: true, mode, name, index: streaming ? -1 : index, count: queue.length, paused, blackout: blackedOut } }); } catch (e) {}
+        const st = { online: true, mode, name, index: streaming ? -1 : index, count: queue.length, paused, blackout: blackedOut };
+        if (ndi) {
+            if (active && active.ndi && active.ndi.on && !ndi.has()) st.ndiError = ndi.error || 'no signal';
+            if (ndi.started) st.ndi = { state: ndi.bridge.state, source: ndi.bridge.source, sources: ndi.bridge.sources };
+        }
+        try { socket.emit('player-status', { token, status: st }); } catch (e) {}
     }
 
     function reload() {
@@ -549,13 +556,27 @@
 
     // ---- camera takeover ----
     function updateStreamMembership() {
-        if (!receiver) return;
-        if (active && active.stream && active.sceneId) receiver.join(active.sceneId);
-        else receiver.leave();
+        if (receiver) {
+            if (active && active.stream && active.sceneId) receiver.join(active.sceneId);
+            else receiver.leave();
+        }
+        if (ndi) {
+            if (active && active.ndi && active.ndi.on) ndi.start(active.ndi.source || '');
+            else ndi.stop();
+        }
     }
 
+    // all live sources (NDI + camera streams) oldest→newest; the newest is active
+    function liveList() {
+        const list = [];
+        if (ndi) for (const s of ndi.list()) list.push(s);
+        if (receiver) for (const s of receiver.list()) list.push(s);
+        return list.sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+    }
+    function liveHas() { return liveList().length > 0; }
+
     function onStreamChange() {
-        const has = receiver && receiver.has();
+        const has = liveHas();
         if (has && !streaming) {
             streaming = true;
             clearTimers(); stopRaf();
@@ -581,7 +602,7 @@
         const C = container();
         ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
         if (blackedOut) return;
-        const list = receiver.list().filter(s => s.video.videoWidth);
+        const list = liveList().filter(s => s.video && s.video.videoWidth);
         if (!list.length) return;
 
         ctx.save();
@@ -623,7 +644,7 @@
 
     // audio: active (newest) stream only, others muted (and all muted until unlocked)
     function updateAudio() {
-        const list = receiver.list();
+        const list = liveList();
         list.forEach((s, i) => {
             const isActive = (i === list.length - 1);
             s.video.muted = !isActive || !soundOn;
@@ -632,7 +653,7 @@
     }
 
     function updateCounter() {
-        if (streaming) { counter.classList.add('fresh'); counter.textContent = '● ' + receiver.list().length + ' live'; return; }
+        if (streaming) { counter.classList.add('fresh'); counter.textContent = '● ' + liveList().length + ' live'; return; }
         if (playingFresh) { counter.classList.add('fresh'); counter.textContent = '★ ' + fresh.length + ' fresh'; }
         else { counter.classList.remove('fresh'); counter.textContent = queue.length ? (index + 1) + ' / ' + queue.length : ''; }
     }

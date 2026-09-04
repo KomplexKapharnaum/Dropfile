@@ -188,6 +188,18 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="sc-section">
+                                    <div class="sc-section-head">
+                                        <span class="sc-section-lbl">NDI input</span>
+                                    </div>
+                                    <div class="sc-accept">
+                                        <div class="sc-arow">
+                                            <button class="sc-toggle" :class="{on: s.ndi && s.ndi.on}" @click="toggleSceneNdi(project(),s)" title="Show this station's NDI feed while this scene is active (source is set per station)"><span class="sc-tico" x-html="icon('ndi')"></span><span>NDI feed</span></button>
+                                            <span class="spacer"></span>
+                                            <span class="muted hint" x-show="s.ndi && s.ndi.on" x-cloak>source set per station →</span>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <hr class="sc-hr">
 
@@ -319,6 +331,7 @@
                                     <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.audio}" @click="toggleMediaFilter(st,'audio')" title="Audio" x-html="icon('audio')"></button>
                                     <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.text}" @click="toggleMediaFilter(st,'text')" title="Text" x-html="icon('text')"></button>
                                     <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.stream}" @click="toggleMediaFilter(st,'stream')" title="Camera stream" x-html="icon('stream')"></button>
+                                    <button class="iconbtn tchip" :class="{on: st.mediaFilter && st.mediaFilter.ndi}" @click="toggleMediaFilter(st,'ndi')" title="NDI feed" x-html="icon('ndi')"></button>
                                 </div>
                                 <div class="cr-status" :class="statusClass(st)" x-text="statusLabel(st)"></div>
                                 <div class="cr-transport">
@@ -470,6 +483,14 @@
                             <label class="field inline"><span>Rotation</span>
                                 <select x-model.number="st.surface.rotation" @change="saveStation(st)"><option :value="0">0°</option><option :value="90">90°</option><option :value="180">180°</option><option :value="270">270°</option></select></label>
                             <label class="chk"><input type="checkbox" x-model="st.surface.evenLineSuppression" @change="saveStation(st)"> even-line squash (vertical 50%)</label>
+                        </fieldset>
+
+                        <fieldset class="settings">
+                            <legend>NDI input</legend>
+                            <p class="muted hint">The NDI source this box subscribes to. Blank = the box's own default (its <code>hndi.conf</code>). A scene shows it when its <b>NDI feed</b> toggle is on.</p>
+                            <label class="field inline"><span>Source</span>
+                                <input type="text" list="ndiSources" x-model="st.ndi.source" @change="saveStationNdi(st)" placeholder="e.g. REGIE (Resolume Arena - Output)"></label>
+                            <datalist id="ndiSources"><template x-for="n in ndiSourceList()" :key="n"><option :value="n"></option></template></datalist>
                         </fieldset>
 
                         <fieldset class="settings">

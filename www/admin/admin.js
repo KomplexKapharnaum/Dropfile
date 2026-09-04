@@ -36,6 +36,7 @@ const ICONS = {
     audio: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
     text: '<path d="M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"/><path d="M15 3v4h4"/><path d="M9 13h6"/><path d="M9 17h6"/>',
     stream: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
+    ndi: '<circle cx="12" cy="7" r="2"/><path d="M8.5 3.5a5 5 0 0 0 0 7M15.5 3.5a5 5 0 0 1 0 7"/><path d="M11 9l-3 12M13 9l3 12M7 17h10"/>',
     filter: '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
     play: '<polygon points="6 4 20 12 6 20 6 4"/>',
     pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
@@ -234,6 +235,7 @@ function adminApp() {
         setAcceptAll(p, s) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept: { image: true, video: true, audio: true, text: true, stream: true } }); this.replaceProject(r.project); }); },
         toggleAccept(p, s, kind) { const accept = Object.assign({ image: true, video: true, audio: false, text: false, stream: false }, s.accept || {}); accept[kind] = !accept[kind]; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { accept }); this.replaceProject(r.project); }); },
         setStreamMode(p, s, mode) { this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { streamMode: mode }); this.replaceProject(r.project); }); },
+        toggleSceneNdi(p, s) { const on = !(s.ndi && s.ndi.on); this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { ndi: { on } }); this.replaceProject(r.project); }); },
         saveMaxChars(p, s) { const n = Math.floor(Number(s.maxChars)); const v = (Number.isFinite(n) && n >= 0) ? n : 140; s.maxChars = v; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, { maxChars: v }); this.replaceProject(r.project); }); },
         toggleRelay(p, s, kind) { const key = kind === 'image' ? 'relayImage' : 'relayText'; const patch = {}; patch[key] = !s[key]; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/sources/${s.id}`, patch); this.replaceProject(r.project); }); },
 
@@ -349,9 +351,9 @@ function adminApp() {
         togglePlaybackOpts(s) { this.playbackOpts[s.id] = !this.playbackOpts[s.id]; },
         // per-station media-type filter (which kinds of media this station displays)
         toggleMediaFilterOpts(st) { this.mediaFilterOpts[st.id] = !this.mediaFilterOpts[st.id]; },
-        mediaFilterAll(st) { const f = st.mediaFilter || {}; return !!(f.image && f.video && f.audio && f.text && f.stream); },
-        setMediaFilterAll(st) { st.mediaFilter = { image: true, video: true, audio: true, text: true, stream: true }; this.saveStationFilter(st); },
-        toggleMediaFilter(st, kind) { const f = Object.assign({ image: true, video: true, audio: true, text: true, stream: true }, st.mediaFilter || {}); f[kind] = !f[kind]; st.mediaFilter = f; this.saveStationFilter(st); },
+        mediaFilterAll(st) { const f = st.mediaFilter || {}; return !!(f.image && f.video && f.audio && f.text && f.stream && f.ndi); },
+        setMediaFilterAll(st) { st.mediaFilter = { image: true, video: true, audio: true, text: true, stream: true, ndi: true }; this.saveStationFilter(st); },
+        toggleMediaFilter(st, kind) { const f = Object.assign({ image: true, video: true, audio: true, text: true, stream: true, ndi: true }, st.mediaFilter || {}); f[kind] = !f[kind]; st.mediaFilter = f; this.saveStationFilter(st); },
         saveStationFilter(st) { const p = this.project(); if (!p) return; this.guard(async () => { const r = await api('PUT', `/projects/${p.id}/stations/${st.id}`, { mediaFilter: st.mediaFilter }); this.replaceProject(r.project); this.notify('Applied live'); }); },
 
         // ---- live status (keyed by machine) ----
@@ -360,6 +362,8 @@ function adminApp() {
             const s = this.status[st.machineId];
             if (!s) return '— no status';
             if (s.online === false) return 'offline';
+            if (s.mode === 'ndi') return '● NDI';
+            if (s.ndiError) return '⚠ NDI: ' + s.ndiError;
             if (s.mode === 'stream') return '● live';
             if (s.mode === 'black') return '⬛ blackout';
             if (s.mode === 'stopped') return '⏹ stopped';
@@ -370,7 +374,8 @@ function adminApp() {
             if (st.busyElsewhere) return 'off';
             const s = this.status[st.machineId];
             if (!s || s.online === false) return 'off';
-            if (s.mode === 'stream') return 'live';
+            if (s.mode === 'stream' || s.mode === 'ndi') return 'live';
+            if (s.ndiError) return 'off';
             if (s.mode === 'diaporama' && !s.paused) return 'playing';
             if (s.mode === 'stopped' || s.mode === 'black') return 'off';
             return 'on';
@@ -392,6 +397,9 @@ function adminApp() {
         closeStationModal() { this.stationModal.open = false; },
         stationModalStation() { const p = this.project(); if (!p || !this.stationModal.open) return null; return (p.stations || []).find(st => st.id === this.stationModal.sid) || null; },
         saveStation(st) { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', `/projects/${p.id}/stations/${st.id}`, { surface: st.surface }); this.notify('Applied live'); }); },
+        saveStationNdi(st) { const p = this.project(); if (!p) return; this.guard(async () => { await api('PUT', `/projects/${p.id}/stations/${st.id}`, { ndi: { source: (st.ndi && st.ndi.source) || '' } }); this.notify('Applied live'); }); },
+        // union of NDI sources reported by online machines (player-status.ndi.sources); free text always allowed
+        ndiSourceList() { const set = new Set(); for (const s of Object.values(this.status || {})) { const list = s && s.ndi && s.ndi.sources; if (Array.isArray(list)) for (const n of list) if (n) set.add(n); } return [...set].sort(); },
         loadStationMidiMedia(st) {
             const p = this.project();
             if (!p || !st.driving || !st.activeSceneId) { this.stationMidiMedia[st.id] = []; return; }
