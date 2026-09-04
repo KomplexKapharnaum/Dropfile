@@ -362,7 +362,12 @@ function adminApp() {
             const s = this.status[st.machineId];
             if (!s) return '— no status';
             if (s.online === false) return 'offline';
-            if (s.mode === 'ndi') return '● NDI';
+            if (s.mode === 'ndi') {
+                const n = s.ndi || {};
+                if (n.stalled) return '● NDI · holding';                 // riding out a gap
+                if (n.bandwidth === 'lowest') return '● NDI · proxy';    // auto dropped to low bandwidth
+                return '● NDI';
+            }
             if (s.ndiError) return '⚠ NDI: ' + s.ndiError;
             if (s.mode === 'stream') return '● live';
             if (s.mode === 'black') return '⬛ blackout';
@@ -374,7 +379,8 @@ function adminApp() {
             if (st.busyElsewhere) return 'off';
             const s = this.status[st.machineId];
             if (!s || s.online === false) return 'off';
-            if (s.mode === 'stream' || s.mode === 'ndi') return 'live';
+            if (s.mode === 'ndi') return (s.ndi && (s.ndi.stalled || s.ndi.bandwidth === 'lowest')) ? 'warn' : 'live';
+            if (s.mode === 'stream') return 'live';
             if (s.ndiError) return 'off';
             if (s.mode === 'diaporama' && !s.paused) return 'playing';
             if (s.mode === 'stopped' || s.mode === 'black') return 'off';

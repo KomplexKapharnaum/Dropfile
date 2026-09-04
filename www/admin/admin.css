@@ -1,7 +1,7 @@
 :root {
     --bg: #15171c; --panel: #1e2128; --panel2: #262a33; --line: #333845;
     --text: #e6e8ec; --muted: #8a91a0; --accent: #5b9dff; --danger: #ff5b6e;
-    --good: #44d07b; --live: #ff3b6e;
+    --good: #44d07b; --live: #ff3b6e; --warn: #ffb020;
 }
 * { box-sizing: border-box; }
 [x-cloak] { display: none !important; }
@@ -98,6 +98,7 @@ button .ic, .btn .ic { width: 15px; height: 15px; }
 .cr-status.playing { color: var(--good); border-color: var(--good); }
 .cr-status.live { color: var(--live); border-color: var(--live); }
 .cr-status.on { color: var(--text); }
+.cr-status.warn { color: var(--warn); border-color: var(--warn); }
 .cr-transport .iconbtn.ap.active { color: var(--good); border-color: var(--good); background: rgba(68,208,123,.12); }
 .ap-opts { display: flex; flex-direction: column; gap: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 .ap-opts .field.inline span { min-width: 64px; font-size: 12px; }

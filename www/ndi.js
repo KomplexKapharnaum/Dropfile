@@ -130,7 +130,8 @@ class NdiInput {
             const r = await fetch(this.apiBase + '/status', { cache: 'no-store' });
             if (r.ok) {
                 const s = await r.json();
-                this.bridge = { ok: true, state: s.state, source: (s.source && s.source.resolved) || '', sources: this.bridge.sources };
+                this.bridge = { ok: true, state: s.state, stalled: !!s.stalled, restarts: s.restarts,
+                                bandwidth: s.bandwidth, mode: s.mode, source: (s.source && s.source.resolved) || '', sources: this.bridge.sources };
                 this._maybeSwitch();
             } else { this.bridge.ok = false; }
         } catch (e) { this.bridge.ok = false; }

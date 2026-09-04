@@ -110,7 +110,8 @@
         const st = { online: true, mode, name, index: streaming ? -1 : index, count: queue.length, paused, blackout: blackedOut };
         if (ndi) {
             if (active && active.ndi && active.ndi.on && !ndi.has()) st.ndiError = ndi.error || 'no signal';
-            if (ndi.started) st.ndi = { state: ndi.bridge.state, source: ndi.bridge.source, sources: ndi.bridge.sources };
+            if (ndi.started) st.ndi = { state: ndi.bridge.state, stalled: ndi.bridge.stalled, restarts: ndi.bridge.restarts,
+                                        bandwidth: ndi.bridge.bandwidth, mode: ndi.bridge.mode, source: ndi.bridge.source, sources: ndi.bridge.sources };
         }
         try { socket.emit('player-status', { token, status: st }); } catch (e) {}
     }
